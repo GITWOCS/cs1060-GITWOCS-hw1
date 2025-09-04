@@ -11,10 +11,11 @@ export function ChessTimer() {
     gameResult,
     updateTime,
     endGame,
+    isThinking,
   } = useGameStore();
 
-  // Keep running the timer even when AI is thinking
-  const isGameActive = gameStarted && !gameResult;
+  // Only run timer for human player (not AI)
+  const isGameActive = gameStarted && !gameResult && !isThinking;
 
   const onTimeUp = (color: 'white' | 'black') => {
     const winner = color === 'white' ? 'black' : 'white';
@@ -33,37 +34,46 @@ export function ChessTimer() {
   useEffect(() => { onTimeUpdateRef.current = updateTime; }, [updateTime]);
 
   useEffect(() => {
-    if (!isGameActive) return;
+    if (!isGameActive || !activeColor) return;
 
-    let last = Date.now();
-    let acc = 0;
+    let lastUpdate = Date.now();
+    
     const interval = setInterval(() => {
       const now = Date.now();
-      const delta = (now - last) / 1000;
-      last = now;
-      acc += delta;
-
-      while (acc >= 1) {
-        acc -= 1;
-        if (activeColor === 'white') {
-          const newTime = Math.max(0, whiteRef.current - 1);
-          onTimeUpdateRef.current('white', newTime);
-          if (newTime === 0) onTimeUpRef.current('white');
-        } else {
-          const newTime = Math.max(0, blackRef.current - 1);
-          onTimeUpdateRef.current('black', newTime);
-          if (newTime === 0) onTimeUpRef.current('black');
+      const elapsedMs = now - lastUpdate;
+      
+      // Update time every 100ms for smoother countdown
+      if (elapsedMs >= 100) {
+        const elapsedSeconds = elapsedMs / 1000;
+        const currentTime = activeColor === 'white' ? whiteRef.current : blackRef.current;
+        const newTime = Math.max(0, currentTime - elapsedSeconds);
+        
+        // Only update if time has changed significantly
+        if (Math.abs(currentTime - newTime) >= 0.1) {
+          onTimeUpdateRef.current(activeColor, newTime);
+          if (newTime === 0) {
+            onTimeUpRef.current(activeColor);
+          }
+          lastUpdate = now;
         }
       }
-    }, 200);
+    }, 50);
 
     return () => clearInterval(interval);
   }, [activeColor, isGameActive]);
 
   const formatTime = (seconds: number): string => {
-    const minutes = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${minutes}:${secs.toString().padStart(2, '0')}`;
+    if (seconds < 60) {
+      // Show seconds with one decimal when under 1 minute
+      const secs = Math.floor(seconds);
+      const tenths = Math.floor((seconds - secs) * 10);
+      return `${secs}.${tenths}`;
+    } else {
+      // Show only minutes and seconds
+      const minutes = Math.floor(seconds / 60);
+      const secs = Math.floor(seconds % 60);
+      return `${minutes}:${secs.toString().padStart(2, '0')}`;
+    }
   };
 
   const getTimerClass = (color: 'white' | 'black', time: number) => {

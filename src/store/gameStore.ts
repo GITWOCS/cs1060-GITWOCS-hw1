@@ -52,9 +52,25 @@ export const useGameStore = create<GameStore>((set) => ({
     ...initialState,
   }),
   
-  updateTime: (color, time) => set((state) => ({
-    [color === 'white' ? 'whiteTime' : 'blackTime']: time
-  })),
+  updateTime: (color, time) => set((state) => {
+    const timeKey = color === 'white' ? 'whiteTime' : 'blackTime';
+    const newTime = Math.max(0, Math.floor(time * 10) / 10); // Round to 0.1s precision
+    
+    console.log(`Updating ${color} time: ${state[timeKey]}s -> ${newTime}s`);
+    
+    // Check for time forfeit
+    if (newTime === 0 && state.gameStarted && !state.gameResult) {
+      return {
+        [timeKey]: 0,
+        gameResult: { 
+          winner: color === 'white' ? 'black' : 'white',
+          reason: 'time forfeit'
+        }
+      };
+    }
+    
+    return { [timeKey]: newTime };
+  }),
   
   setActiveColor: (color) => set({ activeColor: color }),
   setThinking: (thinking) => set({ isThinking: thinking }),

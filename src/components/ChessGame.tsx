@@ -11,6 +11,8 @@ import { GameControls } from './GameControls';
 import { PromotionDialog } from './PromotionDialog';
 
 export function ChessGame() {
+  // Dummy state to force re-render after AI timer update
+  const [aiTimerTick, setAiTimerTick] = useState(0);
   const gameStore = useGameStore();
   const [game, setGame] = useState(new Chess());
   const [historySan, setHistorySan] = useState<string[]>([]);
@@ -24,6 +26,7 @@ export function ChessGame() {
   
   const gameRef = useRef(game);
   const boardContainerRef = useRef<HTMLDivElement | null>(null);
+  const aiThinkStartTimeRef = useRef<number>(0);
 
   // Helper: clone current game while preserving full move history
   const cloneWithHistory = useCallback((g: Chess): Chess => {
@@ -63,8 +66,8 @@ export function ChessGame() {
   );
 
   // Global multiplier to slow down or speed up AI thinking across all levels
-  // Increase to make AI think longer overall
-  const AI_THINK_MULTIPLIER = 20;
+  // Lower values make the AI use more of its clock time
+  const AI_THINK_MULTIPLIER = 2;
 
   // Update game reference when game state changes
   useEffect(() => {
@@ -79,8 +82,10 @@ export function ChessGame() {
                      (gameStore.playerSide === 'black' && game.turn() === 'w');
     if (!isAiTurn) return;
 
-    // Ensure the timer runs for the side to move (AI) during thinking
-    gameStore.setActiveColor(game.turn() === 'w' ? 'white' : 'black');
+    // Record AI thinking start time and set active color
+    const aiColor = game.turn() === 'w' ? 'white' : 'black';
+    aiThinkStartTimeRef.current = Date.now();
+    gameStore.setActiveColor(aiColor);
     gameStore.setThinking(true);
     // Map menu AI level (1..10) to engine skill level (0..20)
     const menuLevel = Math.max(1, Math.min(10, gameStore.aiStrength));
@@ -98,13 +103,16 @@ export function ChessGame() {
     const randomFactor = 0.8 + (Math.random() * 0.4);
     
     // Base per-move time in ms before scaling
-    const baseMs = 1000; // 1 second baseline
-    const thinkTime = baseMs * AI_THINK_MULTIPLIER * levelFactor * randomFactor;
+    const baseMs = 3000; // 3 seconds baseline minimum
+    const thinkTime = Math.max(3000, baseMs * AI_THINK_MULTIPLIER * levelFactor * randomFactor);
 
-    // Provide engine with the real remaining time and increments (ms)
+    // Get remaining times in milliseconds
     const wtimeMs = Math.max(0, gameStore.whiteTime * 1000);
     const btimeMs = Math.max(0, gameStore.blackTime * 1000);
     const incMs = Math.max(0, (gameStore.timeControl.increment || 0) * 1000);
+    
+    // Log time info for debugging
+    console.log(`AI thinking time: ${thinkTime}ms, White: ${wtimeMs}ms, Black: ${btimeMs}ms, Inc: ${incMs}ms`);
 
     setTimeout(() => {
       findBestMove(
@@ -133,14 +141,31 @@ export function ChessGame() {
         const newGame = cloneWithHistory(game);
         setGame(newGame);
         updateHistory(newGame);
-        gameStore.setActiveColor(newGame.turn() === 'w' ? 'white' : 'black');
-        // The mover is the opposite of the new active color
-        const mover: 'white' | 'black' = newGame.turn() === 'w' ? 'black' : 'white';
-        addTimeIncrementFor(mover);
-        checkGameEnd(newGame);
-        
-        // Analyze new position
-        setTimeout(() => analyzePosition(newGame.fen()), 100);
+
+        // Always update AI timer based on actual thinking time
+        const aiColor = gameStore.playerSide === 'white' ? 'black' : 'white';
+        const currentTime = aiColor === 'white' ? gameStore.whiteTime : gameStore.blackTime;
+        const elapsedMs = Date.now() - aiThinkStartTimeRef.current;
+        const elapsedSeconds = Math.max(2, Math.ceil(elapsedMs / 1000)); // Ensure minimum 2 seconds used
+        const newTime = Math.max(0, currentTime - elapsedSeconds);
+
+  gameStore.updateTime(aiColor, newTime);
+  setAiTimerTick(t => t + 1); // Force re-render so timer display updates
+
+        // Only proceed with the rest if the AI hasn't lost on time
+        if (newTime > 0) {
+          gameStore.setActiveColor(newGame.turn() === 'w' ? 'white' : 'black');
+          // Add increment after a short delay to ensure time update is processed
+          setTimeout(() => {
+            const increment = gameStore.timeControl.increment || 0;
+            if (increment > 0) {
+              const currentTimeAfterMove = aiColor === 'white' ? gameStore.whiteTime : gameStore.blackTime;
+              gameStore.updateTime(aiColor, currentTimeAfterMove + increment);
+            }
+          }, 50);
+          checkGameEnd(newGame);
+          setTimeout(() => analyzePosition(newGame.fen()), 100);
+        }
       }
     } catch (error) {
       console.error('Invalid AI move:', error);
@@ -313,26 +338,40 @@ export function ChessGame() {
         updateHistory(newGame);
         setSelectedSquare(null);
         setLegalMoves([]);
-        // Update active color for timers
         gameStore.setActiveColor(newGame.turn() === 'w' ? 'white' : 'black');
         // Add increment to the mover (opposite of side to move now)
         const mover: 'white' | 'black' = newGame.turn() === 'w' ? 'black' : 'white';
         addTimeIncrementFor(mover);
-        // Check for game end conditions
-        checkGameEnd(newGame);
-        // If against computer and it's now AI's turn, request AI move
+        // Check for game end conditions and always set result
+        if (newGame.isGameOver()) {
+          let winner: 'white' | 'black' | null = null;
+          let reason = '';
+          if (newGame.isCheckmate()) {
+            winner = newGame.turn() === 'w' ? 'black' : 'white';
+            reason = 'checkmate';
+          } else if (newGame.isStalemate()) {
+            reason = 'stalemate';
+          } else if (newGame.isThreefoldRepetition()) {
+            reason = 'threefold repetition';
+          } else if (newGame.isInsufficientMaterial()) {
+            reason = 'insufficient material';
+          } else if (newGame.isDraw()) {
+            reason = '50-move rule';
+          }
+          gameStore.endGame({ winner, reason });
+        }
+        // If against computer and it's now AI's turn, always request AI move
         const aiShouldMove = (
           gameStore.mode === 'computer' &&
           (
             (gameStore.playerSide === 'white' && newGame.turn() === 'b') ||
             (gameStore.playerSide === 'black' && newGame.turn() === 'w')
           ) &&
-          !gameStore.gameResult
+          !newGame.isGameOver()
         );
         if (aiShouldMove) {
           setTimeout(() => requestAiMove(), 300);
         }
-        // Analyze position for evaluation
         setTimeout(() => analyzePosition(newGame.fen()), 200);
         return true;
       }
@@ -380,7 +419,7 @@ export function ChessGame() {
       // Try to find an SVG within the chessboard
       const svgEl = container.querySelector('svg');
       if (!svgEl) {
-        console.warn('SVG not found in board; PNG export unavailable');
+        alert('SVG not found in board; PNG export unavailable');
         return;
       }
       const serializer = new XMLSerializer();
@@ -388,32 +427,36 @@ export function ChessGame() {
       const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
       const url = URL.createObjectURL(svgBlob);
       const img = new Image();
-      // Ensure styling applies
       img.crossOrigin = 'anonymous';
       const rect = svgEl.getBoundingClientRect();
       const width = Math.ceil(rect.width);
       const height = Math.ceil(rect.height);
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = () => reject(new Error('Failed to load SVG image'));
-        img.src = url;
-      });
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, width, height);
-      ctx.drawImage(img, 0, 0, width, height);
-      URL.revokeObjectURL(url);
-      const pngUrl = canvas.toDataURL('image/png');
-      const a = document.createElement('a');
-      a.href = pngUrl;
-      a.download = `chess-board-${new Date().toISOString().split('T')[0]}.png`;
-      a.click();
+      // Wait for SVG to be fully loaded before drawing
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          alert('Canvas context not available');
+          return;
+        }
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+        URL.revokeObjectURL(url);
+        const pngUrl = canvas.toDataURL('image/png');
+        const a = document.createElement('a');
+        a.href = pngUrl;
+        a.download = `chess-board-${new Date().toISOString().split('T')[0]}.png`;
+        a.click();
+      };
+      img.onerror = () => {
+        alert('Failed to load SVG image for PNG export.');
+      };
+      img.src = url;
     } catch (e) {
-      console.error('PNG export failed:', e);
+      alert('PNG export failed: ' + e);
     }
   }, []);
 
@@ -569,7 +612,7 @@ export function ChessGame() {
         </div>
 
         {/* Game Controls */}
-        <div className="mt-6">
+        <div className="mt-6 flex flex-col gap-3">
           <GameControls
             onNewGame={() => {
               setGame(new Chess());
@@ -583,6 +626,19 @@ export function ChessGame() {
             onUndo={handleUndo}
             allowUndo={gameStore.mode === 'human' && !gameStore.gameResult}
           />
+          {/* Forfeit Button */}
+          {gameStore.gameStarted && !gameStore.gameResult && (
+            <button
+              className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-xl transition-all duration-200"
+              onClick={() => {
+                // Forfeit: declare opponent as winner
+                const winner = isPlayerTurn() ? (gameStore.playerSide === 'white' ? 'black' : 'white') : gameStore.playerSide;
+                gameStore.endGame({ winner, reason: 'forfeit' });
+              }}
+            >
+              Forfeit
+            </button>
+          )}
         </div>
 
         {/* Promotion Dialog */}
