@@ -27,7 +27,11 @@ export function ChessGame() {
   const { findBestMove, analyzePosition, isReady } = useStockfish(
     (move) => {
       if (move && gameStore.mode === 'computer' && gameStore.gameStarted && !gameStore.gameResult) {
-        handleAiMove(move);
+        const isAiTurn = (gameStore.playerSide === 'white' && game.turn() === 'b') ||
+                         (gameStore.playerSide === 'black' && game.turn() === 'w');
+        if (isAiTurn) {
+          handleAiMove(move);
+        }
       }
       gameStore.setThinking(false);
     },

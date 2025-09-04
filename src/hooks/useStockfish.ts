@@ -18,6 +18,7 @@ export function useStockfish(
   const evalCbRef = useRef(onEvaluation);
   const readyCbRef = useRef(onReady);
   const readyNotifiedRef = useRef(false);
+  const analyzingRef = useRef(false);
 
   // Keep refs updated with latest callbacks without changing effect deps
   useEffect(() => { bestMoveCbRef.current = onBestMove; }, [onBestMove]);
@@ -48,6 +49,12 @@ export function useStockfish(
       if (line.startsWith('bestmove')) {
         const parts = line.split(' ');
         const mv = parts[1];
+        // If this bestmove is from an analysis request, ignore it for move making
+        if (analyzingRef.current) {
+          // end analysis window
+          analyzingRef.current = false;
+          return;
+        }
         if (mv === '(none)') {
           // Rarely happens; try a fixed depth search fallback
           try {
@@ -110,8 +117,15 @@ export function useStockfish(
   const analyzePosition = useCallback((fen: string) => {
     if (!workerRef.current || !ready) return;
     const w = workerRef.current;
+    analyzingRef.current = true;
     if (fen) w.postMessage(`position fen ${fen}`);
-    w.postMessage('go movetime 400');
+    const t = 400;
+    w.postMessage(`go movetime ${t}`);
+    setTimeout(() => {
+      // Ensure analysis ends and flag resets
+      try { w.postMessage('stop'); } catch {}
+      analyzingRef.current = false;
+    }, t + 100);
   }, [ready]);
 
   const stopThinking = useCallback(() => {
