@@ -24,13 +24,198 @@ export function useStockfish(
   const isReadyRef = useRef(false);
 
   useEffect(() => {
-    // Create a simple AI that makes random legal moves
+    // Create a simple AI worker that makes legal moves
     const workerCode = `
       let isReady = false;
-      let currentGame = null;
       
-      // Import chess.js in the worker
-      importScripts('https://unpkg.com/chess.js@1.0.0-beta.8/dist/chess.min.js');
+      // Simple piece values for evaluation
+      const PIECE_VALUES = {
+        'p': 100, 'n': 320, 'b': 330, 'r': 500, 'q': 900, 'k': 20000
+      };
+      
+      // Simple position evaluation
+      function evaluatePosition(board) {
+        let score = 0;
+        for (let i = 0; i < 8; i++) {
+          for (let j = 0; j < 8; j++) {
+            const piece = board[i][j];
+            if (piece) {
+              const value = PIECE_VALUES[piece.type] || 0;
+              score += piece.color === 'w' ? value : -value;
+            }
+          }
+        }
+        return score + (Math.random() - 0.5) * 50; // Add some randomness
+      }
+      
+      // Convert square notation to array indices
+      function squareToIndices(square) {
+        const file = square.charCodeAt(0) - 97; // a=0, b=1, etc.
+        const rank = parseInt(square[1]) - 1;   // 1=0, 2=1, etc.
+        return [7 - rank, file]; // Flip rank for array indexing
+      }
+      
+      // Convert array indices to square notation
+      function indicesToSquare(row, col) {
+        const file = String.fromCharCode(97 + col);
+        const rank = (8 - row).toString();
+        return file + rank;
+      }
+      
+      // Simple move generation for basic pieces
+      function generateMoves(board, color) {
+        const moves = [];
+        
+        for (let row = 0; row < 8; row++) {
+          for (let col = 0; col < 8; col++) {
+            const piece = board[row][col];
+            if (!piece || piece.color !== color) continue;
+            
+            const from = indicesToSquare(row, col);
+            
+            // Generate moves based on piece type
+            switch (piece.type) {
+              case 'p': // Pawn
+                const direction = piece.color === 'w' ? -1 : 1;
+                const startRow = piece.color === 'w' ? 6 : 1;
+                
+                // Forward move
+                if (row + direction >= 0 && row + direction < 8 && !board[row + direction][col]) {
+                  moves.push({ from, to: indicesToSquare(row + direction, col) });
+                  
+                  // Double move from start
+                  if (row === startRow && !board[row + 2 * direction][col]) {
+                    moves.push({ from, to: indicesToSquare(row + 2 * direction, col) });
+                  }
+                }
+                
+                // Captures
+                for (const dc of [-1, 1]) {
+                  const newCol = col + dc;
+                  const newRow = row + direction;
+                  if (newRow >= 0 && newRow < 8 && newCol >= 0 && newCol < 8) {
+                    const target = board[newRow][newCol];
+                    if (target && target.color !== piece.color) {
+                      moves.push({ from, to: indicesToSquare(newRow, newCol) });
+                    }
+                  }
+                }
+                break;
+                
+              case 'r': // Rook
+                for (const [dr, dc] of [[0,1], [0,-1], [1,0], [-1,0]]) {
+                  for (let i = 1; i < 8; i++) {
+                    const newRow = row + dr * i;
+                    const newCol = col + dc * i;
+                    if (newRow < 0 || newRow >= 8 || newCol < 0 || newCol >= 8) break;
+                    
+                    const target = board[newRow][newCol];
+                    if (!target) {
+                      moves.push({ from, to: indicesToSquare(newRow, newCol) });
+                    } else {
+                      if (target.color !== piece.color) {
+                        moves.push({ from, to: indicesToSquare(newRow, newCol) });
+                      }
+                      break;
+                    }
+                  }
+                }
+                break;
+                
+              case 'n': // Knight
+                for (const [dr, dc] of [[2,1], [2,-1], [-2,1], [-2,-1], [1,2], [1,-2], [-1,2], [-1,-2]]) {
+                  const newRow = row + dr;
+                  const newCol = col + dc;
+                  if (newRow >= 0 && newRow < 8 && newCol >= 0 && newCol < 8) {
+                    const target = board[newRow][newCol];
+                    if (!target || target.color !== piece.color) {
+                      moves.push({ from, to: indicesToSquare(newRow, newCol) });
+                    }
+                  }
+                }
+                break;
+                
+              case 'b': // Bishop
+                for (const [dr, dc] of [[1,1], [1,-1], [-1,1], [-1,-1]]) {
+                  for (let i = 1; i < 8; i++) {
+                    const newRow = row + dr * i;
+                    const newCol = col + dc * i;
+                    if (newRow < 0 || newRow >= 8 || newCol < 0 || newCol >= 8) break;
+                    
+                    const target = board[newRow][newCol];
+                    if (!target) {
+                      moves.push({ from, to: indicesToSquare(newRow, newCol) });
+                    } else {
+                      if (target.color !== piece.color) {
+                        moves.push({ from, to: indicesToSquare(newRow, newCol) });
+                      }
+                      break;
+                    }
+                  }
+                }
+                break;
+                
+              case 'q': // Queen (combination of rook and bishop)
+                for (const [dr, dc] of [[0,1], [0,-1], [1,0], [-1,0], [1,1], [1,-1], [-1,1], [-1,-1]]) {
+                  for (let i = 1; i < 8; i++) {
+                    const newRow = row + dr * i;
+                    const newCol = col + dc * i;
+                    if (newRow < 0 || newRow >= 8 || newCol < 0 || newCol >= 8) break;
+                    
+                    const target = board[newRow][newCol];
+                    if (!target) {
+                      moves.push({ from, to: indicesToSquare(newRow, newCol) });
+                    } else {
+                      if (target.color !== piece.color) {
+                        moves.push({ from, to: indicesToSquare(newRow, newCol) });
+                      }
+                      break;
+                    }
+                  }
+                }
+                break;
+                
+              case 'k': // King
+                for (const [dr, dc] of [[0,1], [0,-1], [1,0], [-1,0], [1,1], [1,-1], [-1,1], [-1,-1]]) {
+                  const newRow = row + dr;
+                  const newCol = col + dc;
+                  if (newRow >= 0 && newRow < 8 && newCol >= 0 && newCol < 8) {
+                    const target = board[newRow][newCol];
+                    if (!target || target.color !== piece.color) {
+                      moves.push({ from, to: indicesToSquare(newRow, newCol) });
+                    }
+                  }
+                }
+                break;
+            }
+          }
+        }
+        
+        return moves;
+      }
+      
+      // Parse FEN to board array
+      function fenToBoard(fen) {
+        const board = Array(8).fill(null).map(() => Array(8).fill(null));
+        const pieces = fen.split(' ')[0];
+        const rows = pieces.split('/');
+        
+        for (let i = 0; i < 8; i++) {
+          let col = 0;
+          for (const char of rows[i]) {
+            if (char >= '1' && char <= '8') {
+              col += parseInt(char);
+            } else {
+              const color = char === char.toUpperCase() ? 'w' : 'b';
+              const type = char.toLowerCase();
+              board[i][col] = { type, color };
+              col++;
+            }
+          }
+        }
+        
+        return board;
+      }
       
       self.onmessage = (e) => {
         const { type, payload } = e.data;
@@ -40,25 +225,33 @@ export function useStockfish(
             setTimeout(() => {
               isReady = true;
               self.postMessage({ type: 'ready' });
-            }, 500);
+            }, 100);
             break;
             
           case 'findBestMove':
             if (isReady && payload.fen) {
               try {
-                const chess = new Chess(payload.fen);
-                const moves = chess.moves();
+                const board = fenToBoard(payload.fen);
+                const activeColor = payload.fen.split(' ')[1]; // 'w' or 'b'
+                const moves = generateMoves(board, activeColor);
                 
                 if (moves.length > 0) {
-                  // Simple AI: pick a random move with slight preference for captures
-                  const captures = moves.filter(move => move.includes('x'));
-                  const selectedMoves = captures.length > 0 && Math.random() > 0.3 ? captures : moves;
-                  const randomMove = selectedMoves[Math.floor(Math.random() * selectedMoves.length)];
+                  // Simple AI strategy: prefer captures, then random
+                  let bestMoves = moves;
                   
-                  // Convert algebraic notation to UCI format
-                  const tempChess = new Chess(payload.fen);
-                  const moveObj = tempChess.move(randomMove);
-                  const uciMove = moveObj ? moveObj.from + moveObj.to + (moveObj.promotion || '') : null;
+                  // Look for captures
+                  const captures = moves.filter(move => {
+                    const [toRow, toCol] = squareToIndices(move.to);
+                    return board[toRow][toCol] !== null;
+                  });
+                  
+                  if (captures.length > 0 && Math.random() > 0.3) {
+                    bestMoves = captures;
+                  }
+                  
+                  // Select random move from best moves
+                  const selectedMove = bestMoves[Math.floor(Math.random() * bestMoves.length)];
+                  const uciMove = selectedMove.from + selectedMove.to;
                   
                   setTimeout(() => {
                     self.postMessage({ type: 'bestmove', move: uciMove });
@@ -75,29 +268,12 @@ export function useStockfish(
           case 'analyze':
             if (isReady && payload.fen) {
               try {
-                const chess = new Chess(payload.fen);
-                // Simple evaluation based on material count
-                let score = 0;
-                const board = chess.board();
-                
-                for (let row of board) {
-                  for (let square of row) {
-                    if (square) {
-                      const pieceValue = {
-                        'p': 100, 'n': 320, 'b': 330, 'r': 500, 'q': 900, 'k': 0
-                      }[square.type] || 0;
-                      
-                      score += square.color === 'w' ? pieceValue : -pieceValue;
-                    }
-                  }
-                }
-                
-                // Add some randomness and positional factors
-                score += (Math.random() - 0.5) * 50;
+                const board = fenToBoard(payload.fen);
+                const score = evaluatePosition(board);
                 
                 setTimeout(() => {
                   self.postMessage({ type: 'evaluation', score });
-                }, 200);
+                }, 100);
               } catch (error) {
                 self.postMessage({ type: 'error', error: error.message });
               }
@@ -125,7 +301,7 @@ export function useStockfish(
           if (score !== undefined) onEvaluation(score, mate);
           break;
         case 'error':
-          console.error('Stockfish error:', error);
+          console.error('AI error:', error);
           break;
       }
     };

@@ -22,12 +22,11 @@ export function ChessGame() {
   } | null>(null);
   
   const gameRef = useRef(game);
-  const lastMoveTime = useRef<number>(Date.now());
 
   // Stockfish integration
   const { findBestMove, analyzePosition, isReady } = useStockfish(
     (move) => {
-      if (move && gameStore.mode === 'computer' && gameStore.gameStarted) {
+      if (move && gameStore.mode === 'computer' && gameStore.gameStarted && !gameStore.gameResult) {
         handleAiMove(move);
       }
       gameStore.setThinking(false);
@@ -36,7 +35,11 @@ export function ChessGame() {
       gameStore.setEvaluation(score);
     },
     () => {
-      console.log('Stockfish is ready');
+      console.log('AI is ready');
+      // If it's AI's turn at start, make first move
+      if (gameStore.mode === 'computer' && gameStore.playerSide === 'black' && gameStore.gameStarted) {
+        requestAiMove();
+      }
     }
   );
 
@@ -44,6 +47,19 @@ export function ChessGame() {
   useEffect(() => {
     gameRef.current = game;
   }, [game]);
+
+  // Request AI move
+  const requestAiMove = useCallback(() => {
+    if (!isReady || gameStore.isThinking || gameStore.gameResult) return;
+    
+    gameStore.setThinking(true);
+    const skillLevel = Math.max(1, Math.min(20, gameStore.aiStrength * 3));
+    const thinkTime = 500 + (gameStore.aiStrength * 100);
+    
+    setTimeout(() => {
+      findBestMove(game.fen(), skillLevel, 10, thinkTime);
+    }, 200);
+  }, [isReady, gameStore.isThinking, gameStore.gameResult, gameStore.aiStrength, game, findBestMove]);
 
   // Handle AI moves
   const handleAiMove = (moveString: string) => {
@@ -82,7 +98,7 @@ export function ChessGame() {
   // Check for game end conditions
   const checkGameEnd = (currentGame: Chess) => {
     if (currentGame.isGameOver()) {
-      let winner: 'white' | 'black' | 'draw' = 'draw';
+      let winner: 'white' | 'black' | null = null;
       let reason = '';
 
       if (currentGame.isCheckmate()) {
@@ -98,40 +114,66 @@ export function ChessGame() {
         reason = '50-move rule';
       }
 
-      gameStore.endGame({ winner: winner === 'draw' ? null : winner, reason });
+      gameStore.endGame({ winner, reason });
     }
   };
 
-  // Handle piece drop (drag and drop)
+  // Handle piece drop (drag and drop) - STRICT VALIDATION
   const onDrop = (sourceSquare: Square, targetSquare: Square) => {
-    // Check if it's the player's turn
-    if (!gameStore.gameStarted || gameStore.gameResult) return false;
+    // Prevent any moves if game is not active
+    if (!gameStore.gameStarted || gameStore.gameResult) {
+      return false;
+    }
     
-    // In computer mode, only allow moves when it's the player's turn
+    // In computer mode, strictly enforce turn order
     if (gameStore.mode === 'computer') {
       const isPlayerTurn = (gameStore.playerSide === 'white' && game.turn() === 'w') ||
                           (gameStore.playerSide === 'black' && game.turn() === 'b');
-      if (!isPlayerTurn || gameStore.isThinking) return false;
+      if (!isPlayerTurn || gameStore.isThinking) {
+        return false;
+      }
     }
 
-    // Check if this is a promotion move
-    const piece = game.get(sourceSquare);
-    const isPromotion = piece?.type === 'p' && 
-      ((piece.color === 'w' && targetSquare[1] === '8') || (piece.color === 'b' && targetSquare[1] === '1'));
+    // Validate the move using chess.js
+    try {
+      const testGame = new Chess(game.fen());
+      const piece = testGame.get(sourceSquare);
+      
+      // Check if piece belongs to current player
+      if (!piece || piece.color !== testGame.turn()) {
+        return false;
+      }
+      
+      // Check if this is a promotion move
+      const isPromotion = piece.type === 'p' && 
+        ((piece.color === 'w' && targetSquare[1] === '8') || (piece.color === 'b' && targetSquare[1] === '1'));
 
-    if (isPromotion) {
-      setPromotionData({ from: sourceSquare, to: targetSquare, color: piece.color === 'w' ? 'white' : 'black' });
-      return false; // Don't make the move yet, wait for promotion choice
+      if (isPromotion) {
+        // Test if the promotion move is legal
+        const testMove = testGame.move({ from: sourceSquare, to: targetSquare, promotion: 'q' });
+        if (testMove) {
+          setPromotionData({ from: sourceSquare, to: targetSquare, color: piece.color === 'w' ? 'white' : 'black' });
+        }
+        return false; // Don't make the move yet, wait for promotion choice
+      }
+
+      // Test if the move is legal
+      const testMove = testGame.move({ from: sourceSquare, to: targetSquare });
+      if (testMove) {
+        return makeMove(sourceSquare, targetSquare);
+      }
+    } catch (error) {
+      console.error('Move validation error:', error);
     }
-
-    return makeMove(sourceSquare, targetSquare);
+    
+    return false; // Move is illegal
   };
 
-  // Handle square click
+  // Handle square click - STRICT VALIDATION
   const handleSquareClick = (square: Square) => {
     if (!gameStore.gameStarted || gameStore.gameResult) return;
 
-    // If it's computer mode and not player's turn, ignore clicks
+    // In computer mode, strictly enforce turn order
     if (gameStore.mode === 'computer') {
       const isPlayerTurn = (gameStore.playerSide === 'white' && game.turn() === 'w') ||
                           (gameStore.playerSide === 'black' && game.turn() === 'b');
@@ -149,7 +191,7 @@ export function ChessGame() {
       // Attempt to make the move
       attemptMove(selectedSquare, square);
     } else {
-      // Select new piece
+      // Select new piece - only allow selecting current player's pieces
       const piece = game.get(square);
       if (piece && piece.color === game.turn()) {
         setSelectedSquare(square);
@@ -164,20 +206,42 @@ export function ChessGame() {
 
   // Attempt to make a move
   const attemptMove = (from: Square, to: Square) => {
-    // Check if this is a promotion move
-    const piece = game.get(from);
-    const isPromotion = piece?.type === 'p' && 
-      ((piece.color === 'w' && to[1] === '8') || (piece.color === 'b' && to[1] === '1'));
+    // Validate move using chess.js
+    try {
+      const testGame = new Chess(game.fen());
+      const piece = testGame.get(from);
+      
+      if (!piece || piece.color !== testGame.turn()) {
+        setSelectedSquare(null);
+        setLegalMoves([]);
+        return;
+      }
+      
+      // Check if this is a promotion move
+      const isPromotion = piece.type === 'p' && 
+        ((piece.color === 'w' && to[1] === '8') || (piece.color === 'b' && to[1] === '1'));
 
-    if (isPromotion) {
-      setPromotionData({ from, to, color: piece.color === 'w' ? 'white' : 'black' });
-      return;
+      if (isPromotion) {
+        // Test if the promotion move is legal
+        const testMove = testGame.move({ from, to, promotion: 'q' });
+        if (testMove) {
+          setPromotionData({ from, to, color: piece.color === 'w' ? 'white' : 'black' });
+        } else {
+          setSelectedSquare(null);
+          setLegalMoves([]);
+        }
+        return;
+      }
+
+      makeMove(from, to);
+    } catch (error) {
+      console.error('Move attempt error:', error);
+      setSelectedSquare(null);
+      setLegalMoves([]);
     }
-
-    makeMove(from, to);
   };
 
-  // Make the actual move
+  // Make the actual move - ONLY if legal
   const makeMove = (from: Square, to: Square, promotion?: string): boolean => {
     try {
       const move = game.move({ from, to, promotion });
@@ -199,14 +263,7 @@ export function ChessGame() {
                            (gameStore.playerSide === 'black' && newGame.turn() === 'w');
           
           if (isAiTurn) {
-            gameStore.setThinking(true);
-            const aiStrengthConfig = gameStore.aiStrength;
-            const skillLevel = Math.min(20, aiStrengthConfig * 3);
-            const thinkTime = 500 + (aiStrengthConfig * 100);
-            
-            setTimeout(() => {
-              findBestMove(newGame.fen(), skillLevel, 10, thinkTime);
-            }, 300);
+            setTimeout(() => requestAiMove(), 300);
           }
         }
         
@@ -303,12 +360,24 @@ export function ChessGame() {
     return styles;
   };
 
-  // Initialize evaluation on game start
+  // Initialize evaluation and AI on game start
   useEffect(() => {
     if (gameStore.gameStarted && isReady) {
       analyzePosition(game.fen());
+      
+      // If AI should move first (player chose black), request AI move
+      if (gameStore.mode === 'computer' && gameStore.playerSide === 'black') {
+        setTimeout(() => requestAiMove(), 500);
+      }
     }
   }, [gameStore.gameStarted, isReady]);
+
+  // Check if it's player's turn (for computer mode)
+  const isPlayerTurn = () => {
+    if (gameStore.mode === 'human') return true;
+    return (gameStore.playerSide === 'white' && game.turn() === 'w') ||
+           (gameStore.playerSide === 'black' && game.turn() === 'b');
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-100 p-4">
@@ -318,7 +387,7 @@ export function ChessGame() {
         
         {/* Game Status */}
         <GameStatus
-          isGameActive={gameStore.gameStarted}
+          isGameActive={gameStore.gameStarted && !gameStore.gameResult}
           activeColor={gameStore.activeColor}
           isInCheck={game.inCheck()}
           gameResult={gameStore.gameResult}
@@ -345,7 +414,7 @@ export function ChessGame() {
                 position={game.fen()}
                 onSquareClick={handleSquareClick}
                 onPieceDrop={onDrop}
-                arePiecesDraggable={gameStore.gameStarted && !gameStore.gameResult}
+                arePiecesDraggable={gameStore.gameStarted && !gameStore.gameResult && isPlayerTurn()}
                 boardOrientation={gameStore.boardFlipped ? 'black' : 'white'}
                 customSquareStyles={getSquareStyles()}
                 customBoardStyle={{
@@ -401,17 +470,17 @@ export function ChessGame() {
 
         {/* Game Result Modal */}
         {gameStore.gameResult && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4 text-center">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate-fadeIn">
+            <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4 text-center transform animate-slideUp">
               <div className="mb-6">
                 {gameStore.gameResult.winner === 'white' && (
-                  <div className="text-6xl mb-4">👑</div>
+                  <div className="text-6xl mb-4 animate-bounce">👑</div>
                 )}
                 {gameStore.gameResult.winner === 'black' && (
-                  <div className="text-6xl mb-4">♛</div>
+                  <div className="text-6xl mb-4 animate-bounce">♛</div>
                 )}
                 {gameStore.gameResult.winner === null && (
-                  <div className="text-6xl mb-4">🤝</div>
+                  <div className="text-6xl mb-4 animate-pulse">🤝</div>
                 )}
                 
                 <h2 className="text-2xl font-bold text-gray-800 mb-2">
@@ -432,7 +501,7 @@ export function ChessGame() {
                   setSelectedSquare(null);
                   setLegalMoves([]);
                 }}
-                className="w-full bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-bold py-3 px-6 rounded-xl transition-all duration-200"
+                className="w-full bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-bold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-105"
               >
                 Play Again
               </button>
@@ -440,6 +509,26 @@ export function ChessGame() {
           </div>
         )}
       </div>
+      
+      <style jsx>{`
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        
+        @keyframes slideUp {
+          from { transform: translateY(20px); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+        
+        .animate-fadeIn {
+          animation: fadeIn 0.3s ease-out;
+        }
+        
+        .animate-slideUp {
+          animation: slideUp 0.4s ease-out;
+        }
+      `}</style>
     </div>
   );
 }
