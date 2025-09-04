@@ -49,9 +49,6 @@ export const useGameStore = create<GameStore>((set) => ({
   endGame: (result) => set({ gameResult: result, gameStarted: false }),
   resetGame: () => set({
     ...initialState,
-    mode: undefined as any,
-    playerSide: undefined as any,
-    timeControl: undefined as any,
   }),
   
   updateTime: (color, time) => set((state) => ({

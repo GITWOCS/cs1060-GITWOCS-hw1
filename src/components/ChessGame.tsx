@@ -48,18 +48,25 @@ export function ChessGame() {
   // Handle AI moves
   const handleAiMove = (moveString: string) => {
     try {
-      const move = game.move(moveString);
+      // Convert UCI format (e2e4) to move object
+      const from = moveString.slice(0, 2) as Square;
+      const to = moveString.slice(2, 4) as Square;
+      const promotion = moveString.slice(4) || undefined;
+      
+      const move = game.move({ from, to, promotion });
       if (move) {
-        setGame(new Chess(game.fen()));
-        gameStore.setActiveColor(game.turn() === 'w' ? 'white' : 'black');
+        const newGame = new Chess(game.fen());
+        setGame(newGame);
+        gameStore.setActiveColor(newGame.turn() === 'w' ? 'white' : 'black');
         addTimeIncrement();
-        checkGameEnd();
+        checkGameEnd(newGame);
         
         // Analyze new position
-        setTimeout(() => analyzePosition(game.fen()), 100);
+        setTimeout(() => analyzePosition(newGame.fen()), 100);
       }
     } catch (error) {
       console.error('Invalid AI move:', error);
+      gameStore.setThinking(false);
     }
   };
 
@@ -73,26 +80,51 @@ export function ChessGame() {
   };
 
   // Check for game end conditions
-  const checkGameEnd = () => {
-    if (game.isGameOver()) {
+  const checkGameEnd = (currentGame: Chess) => {
+    if (currentGame.isGameOver()) {
       let winner: 'white' | 'black' | 'draw' = 'draw';
       let reason = '';
 
-      if (game.isCheckmate()) {
-        winner = game.turn() === 'w' ? 'black' : 'white';
+      if (currentGame.isCheckmate()) {
+        winner = currentGame.turn() === 'w' ? 'black' : 'white';
         reason = 'checkmate';
-      } else if (game.isStalemate()) {
+      } else if (currentGame.isStalemate()) {
         reason = 'stalemate';
-      } else if (game.isThreefoldRepetition()) {
+      } else if (currentGame.isThreefoldRepetition()) {
         reason = 'threefold repetition';
-      } else if (game.isInsufficientMaterial()) {
+      } else if (currentGame.isInsufficientMaterial()) {
         reason = 'insufficient material';
-      } else if (game.isDraw()) {
+      } else if (currentGame.isDraw()) {
         reason = '50-move rule';
       }
 
       gameStore.endGame({ winner: winner === 'draw' ? null : winner, reason });
     }
+  };
+
+  // Handle piece drop (drag and drop)
+  const onDrop = (sourceSquare: Square, targetSquare: Square) => {
+    // Check if it's the player's turn
+    if (!gameStore.gameStarted || gameStore.gameResult) return false;
+    
+    // In computer mode, only allow moves when it's the player's turn
+    if (gameStore.mode === 'computer') {
+      const isPlayerTurn = (gameStore.playerSide === 'white' && game.turn() === 'w') ||
+                          (gameStore.playerSide === 'black' && game.turn() === 'b');
+      if (!isPlayerTurn || gameStore.isThinking) return false;
+    }
+
+    // Check if this is a promotion move
+    const piece = game.get(sourceSquare);
+    const isPromotion = piece?.type === 'p' && 
+      ((piece.color === 'w' && targetSquare[1] === '8') || (piece.color === 'b' && targetSquare[1] === '1'));
+
+    if (isPromotion) {
+      setPromotionData({ from: sourceSquare, to: targetSquare, color: piece.color === 'w' ? 'white' : 'black' });
+      return false; // Don't make the move yet, wait for promotion choice
+    }
+
+    return makeMove(sourceSquare, targetSquare);
   };
 
   // Handle square click
@@ -103,7 +135,7 @@ export function ChessGame() {
     if (gameStore.mode === 'computer') {
       const isPlayerTurn = (gameStore.playerSide === 'white' && game.turn() === 'w') ||
                           (gameStore.playerSide === 'black' && game.turn() === 'b');
-      if (!isPlayerTurn) return;
+      if (!isPlayerTurn || gameStore.isThinking) return;
     }
 
     if (selectedSquare === square) {
@@ -146,45 +178,48 @@ export function ChessGame() {
   };
 
   // Make the actual move
-  const makeMove = (from: Square, to: Square, promotion?: string) => {
+  const makeMove = (from: Square, to: Square, promotion?: string): boolean => {
     try {
       const move = game.move({ from, to, promotion });
       if (move) {
-        setGame(new Chess(game.fen()));
+        const newGame = new Chess(game.fen());
+        setGame(newGame);
         setSelectedSquare(null);
         setLegalMoves([]);
         
-        const newActiveColor = game.turn() === 'w' ? 'white' : 'black';
+        const newActiveColor = newGame.turn() === 'w' ? 'white' : 'black';
         gameStore.setActiveColor(newActiveColor);
         
         addTimeIncrement();
-        checkGameEnd();
+        checkGameEnd(newGame);
         
         // If computer mode and it's AI's turn, request AI move
-        if (gameStore.mode === 'computer' && !game.isGameOver()) {
-          const isAiTurn = (gameStore.playerSide === 'white' && game.turn() === 'b') ||
-                           (gameStore.playerSide === 'black' && game.turn() === 'w');
+        if (gameStore.mode === 'computer' && !newGame.isGameOver()) {
+          const isAiTurn = (gameStore.playerSide === 'white' && newGame.turn() === 'b') ||
+                           (gameStore.playerSide === 'black' && newGame.turn() === 'w');
           
           if (isAiTurn) {
             gameStore.setThinking(true);
             const aiStrengthConfig = gameStore.aiStrength;
             const skillLevel = Math.min(20, aiStrengthConfig * 3);
-            const thinkTime = 1000 + (aiStrengthConfig * 200);
+            const thinkTime = 500 + (aiStrengthConfig * 100);
             
             setTimeout(() => {
-              findBestMove(game.fen(), skillLevel, 15, thinkTime);
+              findBestMove(newGame.fen(), skillLevel, 10, thinkTime);
             }, 300);
           }
         }
         
         // Analyze position for evaluation
-        setTimeout(() => analyzePosition(game.fen()), 200);
+        setTimeout(() => analyzePosition(newGame.fen()), 200);
+        return true;
       }
     } catch (error) {
       console.error('Invalid move:', error);
       setSelectedSquare(null);
       setLegalMoves([]);
     }
+    return false;
   };
 
   // Handle promotion selection
@@ -224,10 +259,12 @@ export function ChessGame() {
   const handleUndo = () => {
     if (game.history().length > 0) {
       game.undo();
-      setGame(new Chess(game.fen()));
+      const newGame = new Chess(game.fen());
+      setGame(newGame);
       setSelectedSquare(null);
       setLegalMoves([]);
-      gameStore.setActiveColor(game.turn() === 'w' ? 'white' : 'black');
+      gameStore.setActiveColor(newGame.turn() === 'w' ? 'white' : 'black');
+      analyzePosition(newGame.fen());
     }
   };
 
@@ -266,6 +303,13 @@ export function ChessGame() {
     return styles;
   };
 
+  // Initialize evaluation on game start
+  useEffect(() => {
+    if (gameStore.gameStarted && isReady) {
+      analyzePosition(game.fen());
+    }
+  }, [gameStore.gameStarted, isReady]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-100 p-4">
       <div className="max-w-7xl mx-auto">
@@ -300,7 +344,8 @@ export function ChessGame() {
               <Chessboard
                 position={game.fen()}
                 onSquareClick={handleSquareClick}
-                arePiecesDraggable={true}
+                onPieceDrop={onDrop}
+                arePiecesDraggable={gameStore.gameStarted && !gameStore.gameResult}
                 boardOrientation={gameStore.boardFlipped ? 'black' : 'white'}
                 customSquareStyles={getSquareStyles()}
                 customBoardStyle={{
@@ -353,6 +398,47 @@ export function ChessGame() {
           onSelect={handlePromotion}
           color={promotionData?.color || 'white'}
         />
+
+        {/* Game Result Modal */}
+        {gameStore.gameResult && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4 text-center">
+              <div className="mb-6">
+                {gameStore.gameResult.winner === 'white' && (
+                  <div className="text-6xl mb-4">👑</div>
+                )}
+                {gameStore.gameResult.winner === 'black' && (
+                  <div className="text-6xl mb-4">♛</div>
+                )}
+                {gameStore.gameResult.winner === null && (
+                  <div className="text-6xl mb-4">🤝</div>
+                )}
+                
+                <h2 className="text-2xl font-bold text-gray-800 mb-2">
+                  {gameStore.gameResult.winner === 'white' && 'White Wins!'}
+                  {gameStore.gameResult.winner === 'black' && 'Black Wins!'}
+                  {gameStore.gameResult.winner === null && 'Draw!'}
+                </h2>
+                
+                <p className="text-gray-600 capitalize">
+                  {gameStore.gameResult.reason}
+                </p>
+              </div>
+              
+              <button
+                onClick={() => {
+                  setGame(new Chess());
+                  gameStore.resetGame();
+                  setSelectedSquare(null);
+                  setLegalMoves([]);
+                }}
+                className="w-full bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-bold py-3 px-6 rounded-xl transition-all duration-200"
+              >
+                Play Again
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
