@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { Clock } from 'lucide-react';
 import { useGameStore } from '../store/gameStore';
 
@@ -13,8 +13,8 @@ export function ChessTimer() {
     endGame,
   } = useGameStore();
 
-  const { isThinking } = useGameStore();
-  const isGameActive = gameStarted && !gameResult && !isThinking;
+  // Keep running the timer even when AI is thinking
+  const isGameActive = gameStarted && !gameResult;
 
   const onTimeUp = (color: 'white' | 'black') => {
     const winner = color === 'white' ? 'black' : 'white';

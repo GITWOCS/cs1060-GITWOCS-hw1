@@ -63,8 +63,8 @@ export function ChessGame() {
   );
 
   // Global multiplier to slow down or speed up AI thinking across all levels
-  // Increase to make AI think longer overall (e.g., 10 makes it ~10x slower)
-  const AI_THINK_MULTIPLIER = 10;
+  // Increase to make AI think longer overall
+  const AI_THINK_MULTIPLIER = 20;
 
   // Update game reference when game state changes
   useEffect(() => {
@@ -85,12 +85,21 @@ export function ChessGame() {
     // Map menu AI level (1..10) to engine skill level (0..20)
     const menuLevel = Math.max(1, Math.min(10, gameStore.aiStrength));
     const engineSkill = Math.round((menuLevel - 1) * (20 / 9));
-    // Easier levels (lower) think slower intentionally:
-    // factor = (11 - menuLevel): level 1 => 10x, level 10 => 1x
-    const levelFactor = 11 - menuLevel;
+    
+    // Calculate thinking time based on level:
+    // - Add more variability based on difficulty level
+    // - Lower levels (easier) think longer to simulate human thinking
+    // - Exponential scaling to make difference more pronounced
+    
+    // Base thinking time is higher for lower levels (slower thinking)
+    const levelFactor = Math.pow(12 - menuLevel, 1.5);
+    
+    // Add some randomness to make AI seem more human-like (±20%)
+    const randomFactor = 0.8 + (Math.random() * 0.4);
+    
     // Base per-move time in ms before scaling
     const baseMs = 1000; // 1 second baseline
-    const thinkTime = baseMs * AI_THINK_MULTIPLIER * levelFactor;
+    const thinkTime = baseMs * AI_THINK_MULTIPLIER * levelFactor * randomFactor;
 
     // Provide engine with the real remaining time and increments (ms)
     const wtimeMs = Math.max(0, gameStore.whiteTime * 1000);
