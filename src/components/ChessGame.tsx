@@ -36,8 +36,7 @@ export function ChessGame() {
     },
     () => {
       console.log('AI is ready');
-      // If it's AI's turn at start, make first move
-      if (gameStore.mode === 'computer' && gameStore.playerSide === 'black' && gameStore.gameStarted) {
+      if (gameStore.gameStarted && gameStore.mode === 'computer') {
         requestAiMove();
       }
     }
@@ -51,15 +50,19 @@ export function ChessGame() {
   // Request AI move
   const requestAiMove = useCallback(() => {
     if (!isReady || gameStore.isThinking || gameStore.gameResult) return;
-    
+    if (gameStore.mode !== 'computer') return;
+    const isAiTurn = (gameStore.playerSide === 'white' && game.turn() === 'b') ||
+                     (gameStore.playerSide === 'black' && game.turn() === 'w');
+    if (!isAiTurn) return;
+
     gameStore.setThinking(true);
     const skillLevel = Math.max(1, Math.min(20, gameStore.aiStrength * 3));
     const thinkTime = 500 + (gameStore.aiStrength * 100);
-    
+
     setTimeout(() => {
       findBestMove(game.fen(), skillLevel, 10, thinkTime);
     }, 200);
-  }, [isReady, gameStore.isThinking, gameStore.gameResult, gameStore.aiStrength, game, findBestMove]);
+  }, [isReady, gameStore.isThinking, gameStore.gameResult, gameStore.aiStrength, game, findBestMove, gameStore.mode, gameStore.playerSide]);
 
   // Handle AI moves
   const handleAiMove = (moveString: string) => {

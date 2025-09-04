@@ -17,6 +17,7 @@ export function useStockfish(
   const bestMoveCbRef = useRef(onBestMove);
   const evalCbRef = useRef(onEvaluation);
   const readyCbRef = useRef(onReady);
+  const readyNotifiedRef = useRef(false);
 
   // Keep refs updated with latest callbacks without changing effect deps
   useEffect(() => { bestMoveCbRef.current = onBestMove; }, [onBestMove]);
@@ -38,14 +39,28 @@ export function useStockfish(
       }
       if (line === 'readyok') {
         setReady(true);
-        // Call latest onReady via ref
-        try { readyCbRef.current(); } catch {}
+        if (!readyNotifiedRef.current) {
+          readyNotifiedRef.current = true;
+          try { readyCbRef.current(); } catch {}
+        }
         return;
       }
       if (line.startsWith('bestmove')) {
         const parts = line.split(' ');
         const mv = parts[1];
-        try { bestMoveCbRef.current(mv === '(none)' ? null : mv); } catch {}
+        if (mv === '(none)') {
+          // Rarely happens; try a fixed depth search fallback
+          try {
+            const w = workerRef.current;
+            if (w) {
+              w.postMessage('stop');
+              w.postMessage('go depth 12');
+            }
+          } catch {}
+          try { bestMoveCbRef.current(null); } catch {}
+        } else {
+          try { bestMoveCbRef.current(mv); } catch {}
+        }
         return;
       }
       if (line.startsWith('info')) {
@@ -75,13 +90,21 @@ export function useStockfish(
   const findBestMove = useCallback((fen: string, skillLevel = 10, _depth = 12, timeMs = 800) => {
     if (!workerRef.current || !ready) return;
     const w = workerRef.current;
+    // Ensure previous searches are stopped and engine is reset
+    w.postMessage('stop');
+    w.postMessage('ucinewgame');
     if (fen) w.postMessage(`position fen ${fen}`);
     // Limit strength and set Elo approximation from skillLevel 1..20
     const s = Math.max(1, Math.min(20, Number(skillLevel) || 1));
     const elo = Math.round(800 + ((s - 1) / 19) * 1200);
     w.postMessage('setoption name UCI_LimitStrength value true');
     w.postMessage(`setoption name UCI_Elo value ${elo}`);
-    w.postMessage(`go movetime ${Math.max(100, timeMs)}`);
+    const t = Math.max(100, timeMs);
+    w.postMessage(`go movetime ${t}`);
+    // Hard stop safety in case the engine ignores movetime
+    setTimeout(() => {
+      try { w.postMessage('stop'); } catch {}
+    }, t + 100);
   }, [ready]);
 
   const analyzePosition = useCallback((fen: string) => {
