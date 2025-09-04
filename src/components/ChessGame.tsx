@@ -31,7 +31,7 @@ export function ChessGame() {
       }
       gameStore.setThinking(false);
     },
-    (score, mate) => {
+    (score) => {
       gameStore.setEvaluation(score);
     },
     () => {
@@ -510,7 +510,7 @@ export function ChessGame() {
         )}
       </div>
       
-      <style jsx>{`
+      <style>{`
         @keyframes fadeIn {
           from { opacity: 0; }
           to { opacity: 1; }
