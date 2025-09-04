@@ -1,34 +1,38 @@
 import React from 'react';
-import { Download, Copy, FileText, RotateCcw } from 'lucide-react';
-import { Chess } from 'chess.js';
+import { Download, Copy, FileText, RotateCcw, Camera } from 'lucide-react';
 
 interface MoveListProps {
-  game: Chess;
+  historySan?: string[]; // Optional SAN array for deterministic updates
   onCopyPgn: () => void;
   onDownloadPgn: () => void;
   onCopyFen: () => void;
+  onSavePng?: () => void;
   onUndo?: () => void;
   allowUndo?: boolean;
 }
 
 export function MoveList({ 
-  game, 
+  historySan,
   onCopyPgn, 
   onDownloadPgn, 
   onCopyFen, 
+  onSavePng,
   onUndo,
   allowUndo = false 
 }: MoveListProps) {
-  const history = game.history({ verbose: true });
-  const moves: Array<{ white?: string; black?: string; number: number }> = [];
-  
-  for (let i = 0; i < history.length; i += 2) {
-    moves.push({
-      number: Math.floor(i / 2) + 1,
-      white: history[i]?.san,
-      black: history[i + 1]?.san
-    });
-  }
+  const moves = React.useMemo(() => {
+    const pairedMoves: Array<{ white?: string; black?: string; number: number }> = [];
+    const sanHistory = historySan || [];
+
+    for (let i = 0; i < sanHistory.length; i += 2) {
+      pairedMoves.push({
+        number: Math.floor(i / 2) + 1,
+        white: sanHistory[i],
+        black: sanHistory[i + 1],
+      });
+    }
+    return pairedMoves;
+  }, [historySan]);
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-6 h-full">
@@ -38,7 +42,7 @@ export function MoveList({
           Move History
         </h3>
         <div className="text-sm text-gray-600">
-          {Math.floor(history.length / 2) + 1} moves
+          {moves.length} moves
         </div>
       </div>
 
@@ -89,6 +93,16 @@ export function MoveList({
           <FileText className="w-4 h-4 mr-2" />
           Copy FEN
         </button>
+
+        {onSavePng && (
+          <button
+            onClick={onSavePng}
+            className="w-full flex items-center justify-center px-4 py-2 bg-teal-500 hover:bg-teal-600 text-white rounded-lg transition-colors duration-200 text-sm"
+          >
+            <Camera className="w-4 h-4 mr-2" />
+            Save Board as PNG
+          </button>
+        )}
 
         {allowUndo && onUndo && (
           <button

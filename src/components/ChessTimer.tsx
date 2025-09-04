@@ -1,45 +1,45 @@
 import React, { useEffect, useRef } from 'react';
 import { Clock } from 'lucide-react';
+import { useGameStore } from '../store/gameStore';
 
-interface ChessTimerProps {
-  whiteTime: number;
-  blackTime: number;
-  activeColor: 'white' | 'black';
-  isGameActive: boolean;
-  onTimeUp: (color: 'white' | 'black') => void;
-  onTimeUpdate: (color: 'white' | 'black', time: number) => void;
-  increment: number;
-}
+export function ChessTimer() {
+  const {
+    whiteTime,
+    blackTime,
+    activeColor,
+    gameStarted,
+    gameResult,
+    updateTime,
+    endGame,
+  } = useGameStore();
 
-export function ChessTimer({
-  whiteTime,
-  blackTime,
-  activeColor,
-  isGameActive,
-  onTimeUp,
-  onTimeUpdate,
-  increment
-}: ChessTimerProps) {
+  const { isThinking } = useGameStore();
+  const isGameActive = gameStarted && !gameResult && !isThinking;
+
+  const onTimeUp = (color: 'white' | 'black') => {
+    const winner = color === 'white' ? 'black' : 'white';
+    endGame({ winner, reason: 'time forfeit' });
+  };
+
   // Keep latest values in refs to avoid stale closures and unnecessary interval resets
   const whiteRef = useRef(whiteTime);
   const blackRef = useRef(blackTime);
   const onTimeUpRef = useRef(onTimeUp);
-  const onTimeUpdateRef = useRef(onTimeUpdate);
+  const onTimeUpdateRef = useRef(updateTime);
 
   useEffect(() => { whiteRef.current = whiteTime; }, [whiteTime]);
   useEffect(() => { blackRef.current = blackTime; }, [blackTime]);
   useEffect(() => { onTimeUpRef.current = onTimeUp; }, [onTimeUp]);
-  useEffect(() => { onTimeUpdateRef.current = onTimeUpdate; }, [onTimeUpdate]);
+  useEffect(() => { onTimeUpdateRef.current = updateTime; }, [updateTime]);
 
   useEffect(() => {
     if (!isGameActive) return;
 
-    // Use real elapsed time to ensure symmetric, accurate countdown
     let last = Date.now();
-    let acc = 0; // accumulated seconds
+    let acc = 0;
     const interval = setInterval(() => {
       const now = Date.now();
-      const delta = (now - last) / 1000; // seconds
+      const delta = (now - last) / 1000;
       last = now;
       acc += delta;
 
@@ -48,16 +48,14 @@ export function ChessTimer({
         if (activeColor === 'white') {
           const newTime = Math.max(0, whiteRef.current - 1);
           onTimeUpdateRef.current('white', newTime);
-          whiteRef.current = newTime;
           if (newTime === 0) onTimeUpRef.current('white');
         } else {
           const newTime = Math.max(0, blackRef.current - 1);
           onTimeUpdateRef.current('black', newTime);
-          blackRef.current = newTime;
           if (newTime === 0) onTimeUpRef.current('black');
         }
       }
-    }, 200); // higher frequency tick for accuracy
+    }, 200);
 
     return () => clearInterval(interval);
   }, [activeColor, isGameActive]);

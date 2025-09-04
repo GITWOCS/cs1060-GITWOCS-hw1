@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Clock, Cpu, Users, Settings, Zap } from 'lucide-react';
 import { GameMode, PlayerSide, TimeControl } from '../types/chess';
 import { TIME_CONTROLS, AI_STRENGTHS } from '../utils/timeControls';

@@ -13,6 +13,7 @@ import { PromotionDialog } from './PromotionDialog';
 export function ChessGame() {
   const gameStore = useGameStore();
   const [game, setGame] = useState(new Chess());
+  const [historySan, setHistorySan] = useState<string[]>([]);
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
   const [legalMoves, setLegalMoves] = useState<Square[]>([]);
   const [promotionData, setPromotionData] = useState<{
@@ -22,6 +23,21 @@ export function ChessGame() {
   } | null>(null);
   
   const gameRef = useRef(game);
+  const boardContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Helper: clone current game while preserving full move history
+  const cloneWithHistory = useCallback((g: Chess): Chess => {
+    const newGame = new Chess();
+    const history = g.history({ verbose: true });
+    for (const move of history) {
+      newGame.move({ from: move.from, to: move.to, promotion: move.promotion });
+    }
+    return newGame;
+  }, []);
+
+  const updateHistory = useCallback((gameInstance: Chess) => {
+    setHistorySan(gameInstance.history());
+  }, []);
 
   // Stockfish integration
   const { findBestMove, analyzePosition, isReady } = useStockfish(
@@ -105,8 +121,9 @@ export function ChessGame() {
       
       const move = game.move({ from, to, promotion });
       if (move) {
-        const newGame = new Chess(game.fen());
+        const newGame = cloneWithHistory(game);
         setGame(newGame);
+        updateHistory(newGame);
         gameStore.setActiveColor(newGame.turn() === 'w' ? 'white' : 'black');
         // The mover is the opposite of the new active color
         const mover: 'white' | 'black' = newGame.turn() === 'w' ? 'black' : 'white';
@@ -278,18 +295,18 @@ export function ChessGame() {
   };
 
   // Make the actual move - ONLY if legal
-  const makeMove = (from: Square, to: Square, promotion?: string): boolean => {
+  const makeMove = (from: Square, to: Square, promotion?: 'q' | 'r' | 'b' | 'n') => {
     try {
       const move = game.move({ from, to, promotion });
       if (move) {
-        const newGame = new Chess(game.fen());
-        // Update local game state
+        const newGame = cloneWithHistory(game);
         setGame(newGame);
+        updateHistory(newGame);
         setSelectedSquare(null);
         setLegalMoves([]);
-        // Update active color in store
+        // Update active color for timers
         gameStore.setActiveColor(newGame.turn() === 'w' ? 'white' : 'black');
-        // Award increment to the player who just moved
+        // Add increment to the mover (opposite of side to move now)
         const mover: 'white' | 'black' = newGame.turn() === 'w' ? 'black' : 'white';
         addTimeIncrementFor(mover);
         // Check for game end conditions
@@ -326,17 +343,6 @@ export function ChessGame() {
     }
   };
 
-  // Handle time up (memoized to avoid timer interval resets)
-  const handleTimeUp = useCallback((color: 'white' | 'black') => {
-    const winner = color === 'white' ? 'black' : 'white';
-    gameStore.endGame({ winner, reason: 'time forfeit' });
-  }, [gameStore]);
-
-  // Stable onTimeUpdate to prevent resetting interval every render
-  const handleTimeUpdate = useCallback((color: 'white' | 'black', time: number) => {
-    gameStore.updateTime(color, time);
-  }, [gameStore]);
-
   // Export functions
   const handleCopyPgn = () => {
     navigator.clipboard.writeText(game.pgn());
@@ -357,12 +363,58 @@ export function ChessGame() {
     navigator.clipboard.writeText(game.fen());
   };
 
+  // Save the board area as PNG by serializing the inner SVG to a canvas
+  const handleSaveBoardPng = useCallback(async () => {
+    try {
+      const container = boardContainerRef.current;
+      if (!container) return;
+      // Try to find an SVG within the chessboard
+      const svgEl = container.querySelector('svg');
+      if (!svgEl) {
+        console.warn('SVG not found in board; PNG export unavailable');
+        return;
+      }
+      const serializer = new XMLSerializer();
+      const svgString = serializer.serializeToString(svgEl);
+      const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(svgBlob);
+      const img = new Image();
+      // Ensure styling applies
+      img.crossOrigin = 'anonymous';
+      const rect = svgEl.getBoundingClientRect();
+      const width = Math.ceil(rect.width);
+      const height = Math.ceil(rect.height);
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error('Failed to load SVG image'));
+        img.src = url;
+      });
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(img, 0, 0, width, height);
+      URL.revokeObjectURL(url);
+      const pngUrl = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = pngUrl;
+      a.download = `chess-board-${new Date().toISOString().split('T')[0]}.png`;
+      a.click();
+    } catch (e) {
+      console.error('PNG export failed:', e);
+    }
+  }, []);
+
   // Start a fresh game with the same mode/side/time settings
   const startNewGameSameSettings = useCallback(() => {
     const currentMode = gameStore.mode;
     const currentSide = gameStore.playerSide;
     const currentTime = gameStore.timeControl;
     setGame(new Chess());
+    setHistorySan([]);
     setSelectedSquare(null);
     setLegalMoves([]);
     gameStore.setGameMode(currentMode);
@@ -381,11 +433,16 @@ export function ChessGame() {
   const handleUndo = () => {
     if (game.history().length > 0) {
       game.undo();
-      const newGame = new Chess(game.fen());
+      const newGame = cloneWithHistory(game);
       setGame(newGame);
+      updateHistory(newGame);
       setSelectedSquare(null);
       setLegalMoves([]);
       gameStore.setActiveColor(newGame.turn() === 'w' ? 'white' : 'black');
+      // If the game had ended, clear result to allow continuing after undo
+      if (gameStore.gameResult) {
+        gameStore.startGame();
+      }
       analyzePosition(newGame.fen());
     }
   };
@@ -460,21 +517,13 @@ export function ChessGame() {
         />
         
         {/* Timers */}
-        <ChessTimer
-          whiteTime={gameStore.whiteTime}
-          blackTime={gameStore.blackTime}
-          activeColor={gameStore.activeColor}
-          isGameActive={gameStore.gameStarted && !gameStore.gameResult}
-          onTimeUp={handleTimeUp}
-          onTimeUpdate={handleTimeUpdate}
-          increment={gameStore.timeControl.increment}
-        />
+        <ChessTimer />
 
         {/* Main Game Area */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Chess Board */}
           <div className="lg:col-span-2">
-            <div className="bg-white rounded-2xl shadow-2xl p-6">
+            <div className="bg-white rounded-2xl shadow-2xl p-6" ref={boardContainerRef}>
               <Chessboard
                 position={game.fen()}
                 onSquareClick={handleSquareClick}
@@ -499,12 +548,13 @@ export function ChessGame() {
           {/* Move List and Controls */}
           <div className="space-y-4">
             <MoveList
-              game={game}
+              historySan={historySan}
               onCopyPgn={handleCopyPgn}
               onDownloadPgn={handleDownloadPgn}
               onCopyFen={handleCopyFen}
+              onSavePng={handleSaveBoardPng}
               onUndo={handleUndo}
-              allowUndo={gameStore.mode === 'human' && !gameStore.gameResult}
+              allowUndo={!gameStore.gameResult}
             />
           </div>
         </div>
