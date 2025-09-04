@@ -2,7 +2,16 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 
 interface UseStockfishReturn {
   isReady: boolean;
-  findBestMove: (fen: string, skillLevel?: number, depth?: number, timeMs?: number) => void;
+  findBestMove: (
+    fen: string,
+    skillLevel?: number,
+    depth?: number,
+    timeMs?: number,
+    wtimeMs?: number,
+    btimeMs?: number,
+    wincMs?: number,
+    bincMs?: number
+  ) => void;
   analyzePosition: (fen: string) => void;
   stopThinking: () => void;
 }
@@ -94,24 +103,50 @@ export function useStockfish(
     };
   }, []);
 
-  const findBestMove = useCallback((fen: string, skillLevel = 10, _depth = 12, timeMs = 800) => {
+  const findBestMove = useCallback((
+    fen: string,
+    skillLevel = 10,
+    _depth = 12,
+    timeMs = 800,
+    wtimeMs?: number,
+    btimeMs?: number,
+    wincMs?: number,
+    bincMs?: number,
+  ) => {
     if (!workerRef.current || !ready) return;
     const w = workerRef.current;
     // Ensure previous searches are stopped and engine is reset
     w.postMessage('stop');
     w.postMessage('ucinewgame');
     if (fen) w.postMessage(`position fen ${fen}`);
-    // Limit strength and set Elo approximation from skillLevel 1..20
+    // Limit strength and set a MUCH lower Elo for low levels to make level 1 easy
+    // Skill level constrained to 1..20
     const s = Math.max(1, Math.min(20, Number(skillLevel) || 1));
-    const elo = Math.round(800 + ((s - 1) / 19) * 1200);
+    // Map s=1..20 to a softer Elo range ~300..1200 instead of ~800..2000
+    const elo = Math.round(300 + ((s - 1) / 19) * 900);
     w.postMessage('setoption name UCI_LimitStrength value true');
     w.postMessage(`setoption name UCI_Elo value ${elo}`);
+    // Also set the built-in Skill Level (0..20). Use s-1 within 0..20
+    const sfSkill = Math.max(0, Math.min(20, s - 1));
+    w.postMessage(`setoption name Skill Level value ${sfSkill}`);
     const t = Math.max(100, timeMs);
-    w.postMessage(`go movetime ${t}`);
-    // Hard stop safety in case the engine ignores movetime
-    setTimeout(() => {
-      try { w.postMessage('stop'); } catch {}
-    }, t + 100);
+    // If clock times provided, use clock-aware search; else fallback to movetime
+    if (typeof wtimeMs === 'number' && typeof btimeMs === 'number') {
+      const winc = Math.max(0, wincMs ?? 0);
+      const binc = Math.max(0, bincMs ?? 0);
+      w.postMessage(`go wtime ${Math.max(0, Math.floor(wtimeMs))} btime ${Math.max(0, Math.floor(btimeMs))} winc ${Math.floor(winc)} binc ${Math.floor(binc)}`);
+      // Safety stop after a bit beyond the smaller of remaining/target think time
+      const safety = Math.min(t, Math.max(1000, Math.floor(Math.min(wtimeMs, btimeMs) * 0.5)));
+      setTimeout(() => {
+        try { w.postMessage('stop'); } catch {}
+      }, safety + 200);
+    } else {
+      w.postMessage(`go movetime ${t}`);
+      // Hard stop safety in case the engine ignores movetime
+      setTimeout(() => {
+        try { w.postMessage('stop'); } catch {}
+      }, t + 100);
+    }
   }, [ready]);
 
   const analyzePosition = useCallback((fen: string) => {

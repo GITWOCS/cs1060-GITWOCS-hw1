@@ -46,7 +46,8 @@ export const useGameStore = create<GameStore>((set) => ({
   setAiStrength: (strength) => set({ aiStrength: strength }),
   
   startGame: () => set({ gameStarted: true, gameResult: null }),
-  endGame: (result) => set({ gameResult: result, gameStarted: false }),
+  // Keep gameStarted true on endGame so the UI can show a game-over modal
+  endGame: (result) => set({ gameResult: result }),
   resetGame: () => set({
     ...initialState,
   }),

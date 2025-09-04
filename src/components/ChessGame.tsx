@@ -46,6 +46,10 @@ export function ChessGame() {
     }
   );
 
+  // Global multiplier to slow down or speed up AI thinking across all levels
+  // Increase to make AI think longer overall (e.g., 10 makes it ~10x slower)
+  const AI_THINK_MULTIPLIER = 10;
+
   // Update game reference when game state changes
   useEffect(() => {
     gameRef.current = game;
@@ -59,12 +63,35 @@ export function ChessGame() {
                      (gameStore.playerSide === 'black' && game.turn() === 'w');
     if (!isAiTurn) return;
 
+    // Ensure the timer runs for the side to move (AI) during thinking
+    gameStore.setActiveColor(game.turn() === 'w' ? 'white' : 'black');
     gameStore.setThinking(true);
-    const skillLevel = Math.max(1, Math.min(20, gameStore.aiStrength * 3));
-    const thinkTime = 500 + (gameStore.aiStrength * 100);
+    // Map menu AI level (1..10) to engine skill level (0..20)
+    const menuLevel = Math.max(1, Math.min(10, gameStore.aiStrength));
+    const engineSkill = Math.round((menuLevel - 1) * (20 / 9));
+    // Easier levels (lower) think slower intentionally:
+    // factor = (11 - menuLevel): level 1 => 10x, level 10 => 1x
+    const levelFactor = 11 - menuLevel;
+    // Base per-move time in ms before scaling
+    const baseMs = 1000; // 1 second baseline
+    const thinkTime = baseMs * AI_THINK_MULTIPLIER * levelFactor;
+
+    // Provide engine with the real remaining time and increments (ms)
+    const wtimeMs = Math.max(0, gameStore.whiteTime * 1000);
+    const btimeMs = Math.max(0, gameStore.blackTime * 1000);
+    const incMs = Math.max(0, (gameStore.timeControl.increment || 0) * 1000);
 
     setTimeout(() => {
-      findBestMove(game.fen(), skillLevel, 10, thinkTime);
+      findBestMove(
+        game.fen(),
+        engineSkill,
+        10,
+        thinkTime,
+        wtimeMs,
+        btimeMs,
+        incMs,
+        incMs
+      );
     }, 200);
   }, [isReady, gameStore.isThinking, gameStore.gameResult, gameStore.aiStrength, game, findBestMove, gameStore.mode, gameStore.playerSide]);
 
@@ -81,7 +108,9 @@ export function ChessGame() {
         const newGame = new Chess(game.fen());
         setGame(newGame);
         gameStore.setActiveColor(newGame.turn() === 'w' ? 'white' : 'black');
-        addTimeIncrement();
+        // The mover is the opposite of the new active color
+        const mover: 'white' | 'black' = newGame.turn() === 'w' ? 'black' : 'white';
+        addTimeIncrementFor(mover);
         checkGameEnd(newGame);
         
         // Analyze new position
@@ -93,12 +122,12 @@ export function ChessGame() {
     }
   };
 
-  // Add time increment after move
-  const addTimeIncrement = () => {
+  // Add time increment to the player who just moved
+  const addTimeIncrementFor = (mover: 'white' | 'black') => {
     const { increment } = gameStore.timeControl;
     if (increment > 0) {
-      const currentTime = gameStore.activeColor === 'white' ? gameStore.whiteTime : gameStore.blackTime;
-      gameStore.updateTime(gameStore.activeColor, currentTime + increment);
+      const currentTime = mover === 'white' ? gameStore.whiteTime : gameStore.blackTime;
+      gameStore.updateTime(mover, currentTime + increment);
     }
   };
 
@@ -254,26 +283,29 @@ export function ChessGame() {
       const move = game.move({ from, to, promotion });
       if (move) {
         const newGame = new Chess(game.fen());
+        // Update local game state
         setGame(newGame);
         setSelectedSquare(null);
         setLegalMoves([]);
-        
-        const newActiveColor = newGame.turn() === 'w' ? 'white' : 'black';
-        gameStore.setActiveColor(newActiveColor);
-        
-        addTimeIncrement();
+        // Update active color in store
+        gameStore.setActiveColor(newGame.turn() === 'w' ? 'white' : 'black');
+        // Award increment to the player who just moved
+        const mover: 'white' | 'black' = newGame.turn() === 'w' ? 'black' : 'white';
+        addTimeIncrementFor(mover);
+        // Check for game end conditions
         checkGameEnd(newGame);
-        
-        // If computer mode and it's AI's turn, request AI move
-        if (gameStore.mode === 'computer' && !newGame.isGameOver()) {
-          const isAiTurn = (gameStore.playerSide === 'white' && newGame.turn() === 'b') ||
-                           (gameStore.playerSide === 'black' && newGame.turn() === 'w');
-          
-          if (isAiTurn) {
-            setTimeout(() => requestAiMove(), 300);
-          }
+        // If against computer and it's now AI's turn, request AI move
+        const aiShouldMove = (
+          gameStore.mode === 'computer' &&
+          (
+            (gameStore.playerSide === 'white' && newGame.turn() === 'b') ||
+            (gameStore.playerSide === 'black' && newGame.turn() === 'w')
+          ) &&
+          !gameStore.gameResult
+        );
+        if (aiShouldMove) {
+          setTimeout(() => requestAiMove(), 300);
         }
-        
         // Analyze position for evaluation
         setTimeout(() => analyzePosition(newGame.fen()), 200);
         return true;
@@ -294,11 +326,16 @@ export function ChessGame() {
     }
   };
 
-  // Handle time up
-  const handleTimeUp = (color: 'white' | 'black') => {
+  // Handle time up (memoized to avoid timer interval resets)
+  const handleTimeUp = useCallback((color: 'white' | 'black') => {
     const winner = color === 'white' ? 'black' : 'white';
     gameStore.endGame({ winner, reason: 'time forfeit' });
-  };
+  }, [gameStore]);
+
+  // Stable onTimeUpdate to prevent resetting interval every render
+  const handleTimeUpdate = useCallback((color: 'white' | 'black', time: number) => {
+    gameStore.updateTime(color, time);
+  }, [gameStore]);
 
   // Export functions
   const handleCopyPgn = () => {
@@ -319,6 +356,27 @@ export function ChessGame() {
   const handleCopyFen = () => {
     navigator.clipboard.writeText(game.fen());
   };
+
+  // Start a fresh game with the same mode/side/time settings
+  const startNewGameSameSettings = useCallback(() => {
+    const currentMode = gameStore.mode;
+    const currentSide = gameStore.playerSide;
+    const currentTime = gameStore.timeControl;
+    setGame(new Chess());
+    setSelectedSquare(null);
+    setLegalMoves([]);
+    gameStore.setGameMode(currentMode);
+    gameStore.setPlayerSide(currentSide);
+    gameStore.setTimeControl(currentTime);
+    gameStore.setActiveColor('white');
+    gameStore.setEvaluation(0);
+    gameStore.startGame();
+    // If AI should move first
+    if (currentMode === 'computer' && currentSide === 'black') {
+      setTimeout(() => requestAiMove(), 400);
+    }
+    setTimeout(() => analyzePosition(new Chess().fen()), 100);
+  }, [gameStore, analyzePosition, requestAiMove]);
 
   const handleUndo = () => {
     if (game.history().length > 0) {
@@ -408,7 +466,7 @@ export function ChessGame() {
           activeColor={gameStore.activeColor}
           isGameActive={gameStore.gameStarted && !gameStore.gameResult}
           onTimeUp={handleTimeUp}
-          onTimeUpdate={(color, time) => gameStore.updateTime(color, time)}
+          onTimeUpdate={handleTimeUpdate}
           increment={gameStore.timeControl.increment}
         />
 
@@ -500,18 +558,25 @@ export function ChessGame() {
                   {gameStore.gameResult.reason}
                 </p>
               </div>
-              
-              <button
-                onClick={() => {
-                  setGame(new Chess());
-                  gameStore.resetGame();
-                  setSelectedSquare(null);
-                  setLegalMoves([]);
-                }}
-                className="w-full bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-bold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-105"
-              >
-                Play Again
-              </button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  onClick={startNewGameSameSettings}
+                  className="w-full bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-bold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-105"
+                >
+                  Play Again
+                </button>
+                <button
+                  onClick={() => {
+                    setGame(new Chess());
+                    gameStore.resetGame();
+                    setSelectedSquare(null);
+                    setLegalMoves([]);
+                  }}
+                  className="w-full bg-white border-2 border-gray-300 hover:border-gray-400 text-gray-800 font-semibold py-3 px-6 rounded-xl transition-all duration-200"
+                >
+                  Main Menu
+                </button>
+              </div>
             </div>
           </div>
         )}

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Clock } from 'lucide-react';
 
 interface ChessTimerProps {
@@ -20,24 +20,47 @@ export function ChessTimer({
   onTimeUpdate,
   increment
 }: ChessTimerProps) {
-  
+  // Keep latest values in refs to avoid stale closures and unnecessary interval resets
+  const whiteRef = useRef(whiteTime);
+  const blackRef = useRef(blackTime);
+  const onTimeUpRef = useRef(onTimeUp);
+  const onTimeUpdateRef = useRef(onTimeUpdate);
+
+  useEffect(() => { whiteRef.current = whiteTime; }, [whiteTime]);
+  useEffect(() => { blackRef.current = blackTime; }, [blackTime]);
+  useEffect(() => { onTimeUpRef.current = onTimeUp; }, [onTimeUp]);
+  useEffect(() => { onTimeUpdateRef.current = onTimeUpdate; }, [onTimeUpdate]);
+
   useEffect(() => {
     if (!isGameActive) return;
 
+    // Use real elapsed time to ensure symmetric, accurate countdown
+    let last = Date.now();
+    let acc = 0; // accumulated seconds
     const interval = setInterval(() => {
-      if (activeColor === 'white') {
-        const newTime = Math.max(0, whiteTime - 1);
-        onTimeUpdate('white', newTime);
-        if (newTime === 0) onTimeUp('white');
-      } else {
-        const newTime = Math.max(0, blackTime - 1);
-        onTimeUpdate('black', newTime);
-        if (newTime === 0) onTimeUp('black');
+      const now = Date.now();
+      const delta = (now - last) / 1000; // seconds
+      last = now;
+      acc += delta;
+
+      while (acc >= 1) {
+        acc -= 1;
+        if (activeColor === 'white') {
+          const newTime = Math.max(0, whiteRef.current - 1);
+          onTimeUpdateRef.current('white', newTime);
+          whiteRef.current = newTime;
+          if (newTime === 0) onTimeUpRef.current('white');
+        } else {
+          const newTime = Math.max(0, blackRef.current - 1);
+          onTimeUpdateRef.current('black', newTime);
+          blackRef.current = newTime;
+          if (newTime === 0) onTimeUpRef.current('black');
+        }
       }
-    }, 1000);
+    }, 200); // higher frequency tick for accuracy
 
     return () => clearInterval(interval);
-  }, [whiteTime, blackTime, activeColor, isGameActive, onTimeUp, onTimeUpdate]);
+  }, [activeColor, isGameActive]);
 
   const formatTime = (seconds: number): string => {
     const minutes = Math.floor(seconds / 60);

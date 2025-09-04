@@ -7,7 +7,7 @@ import { useGameStore } from '../store/gameStore';
 export function GameSetup() {
   const [selectedMode, setSelectedMode] = useState<GameMode>('computer');
   const [selectedSide, setSelectedSide] = useState<PlayerSide>('white');
-  const [selectedTimeControl, setSelectedTimeControl] = useState<TimeControl>(TIME_CONTROLS[6]); // Rapid 10+0
+  const [selectedTimeControl, setSelectedTimeControl] = useState<TimeControl>(TIME_CONTROLS[2]); // Blitz 3+0
   const [selectedAiStrength, setSelectedAiStrength] = useState(5);
   const [customTime, setCustomTime] = useState({ minutes: 10, increment: 0 });
   const [showCustomTime, setShowCustomTime] = useState(false);
