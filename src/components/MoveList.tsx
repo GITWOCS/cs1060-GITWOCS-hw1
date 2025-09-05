@@ -1,12 +1,11 @@
 import React from 'react';
-import { Download, Copy, FileText, RotateCcw, Camera } from 'lucide-react';
+import { Download, Copy, FileText, RotateCcw } from 'lucide-react';
 
 interface MoveListProps {
   historySan?: string[]; // Optional SAN array for deterministic updates
   onCopyPgn: () => void;
   onDownloadPgn: () => void;
   onCopyFen: () => void;
-  onSavePng?: () => void;
   onUndo?: () => void;
   allowUndo?: boolean;
 }
@@ -16,7 +15,6 @@ export function MoveList({
   onCopyPgn, 
   onDownloadPgn, 
   onCopyFen, 
-  onSavePng,
   onUndo,
   allowUndo = false 
 }: MoveListProps) {
@@ -94,15 +92,6 @@ export function MoveList({
           Copy FEN
         </button>
 
-        {onSavePng && (
-          <button
-            onClick={onSavePng}
-            className="w-full flex items-center justify-center px-4 py-2 bg-teal-500 hover:bg-teal-600 text-white rounded-lg transition-colors duration-200 text-sm"
-          >
-            <Camera className="w-4 h-4 mr-2" />
-            Save Board as PNG
-          </button>
-        )}
 
         {allowUndo && onUndo && (
           <button

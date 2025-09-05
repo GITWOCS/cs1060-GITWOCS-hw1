@@ -123,7 +123,7 @@ export function ChessGame() {
           }
         } else {
           // Hard: Evaluate moves and pick best ones
-          let bestMoves = [];
+          let bestMoves: any[] = [];
           let bestScore = gameStore.playerSide === 'white' ? Infinity : -Infinity;
           
           for (const move of moves) {
@@ -413,54 +413,6 @@ export function ChessGame() {
     navigator.clipboard.writeText(game.fen());
   };
 
-  // Save the board area as PNG by serializing the inner SVG to a canvas
-  const handleSaveBoardPng = useCallback(async () => {
-    try {
-      const container = boardContainerRef.current;
-      if (!container) return;
-      // Try to find an SVG within the chessboard
-      const svgEl = container.querySelector('svg');
-      if (!svgEl) {
-        alert('SVG not found in board; PNG export unavailable');
-        return;
-      }
-      const serializer = new XMLSerializer();
-      const svgString = serializer.serializeToString(svgEl);
-      const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
-      const url = URL.createObjectURL(svgBlob);
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      const rect = svgEl.getBoundingClientRect();
-      const width = Math.ceil(rect.width);
-      const height = Math.ceil(rect.height);
-      // Wait for SVG to be fully loaded before drawing
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          alert('Canvas context not available');
-          return;
-        }
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, width, height);
-        ctx.drawImage(img, 0, 0, width, height);
-        URL.revokeObjectURL(url);
-        const pngUrl = canvas.toDataURL('image/png');
-        const a = document.createElement('a');
-        a.href = pngUrl;
-        a.download = `chess-board-${new Date().toISOString().split('T')[0]}.png`;
-        a.click();
-      };
-      img.onerror = () => {
-        alert('Failed to load SVG image for PNG export.');
-      };
-      img.src = url;
-    } catch (e) {
-      alert('PNG export failed: ' + e);
-    }
-  }, []);
 
   // Start a fresh game with the same mode/side/time settings
   const startNewGameSameSettings = useCallback(() => {
@@ -637,7 +589,6 @@ export function ChessGame() {
               onCopyPgn={handleCopyPgn}
               onDownloadPgn={handleDownloadPgn}
               onCopyFen={handleCopyFen}
-              onSavePng={handleSaveBoardPng}
               onUndo={handleUndo}
               allowUndo={!gameStore.gameResult}
             />
