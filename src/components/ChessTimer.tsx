@@ -11,11 +11,10 @@ export function ChessTimer() {
     gameResult,
     updateTime,
     endGame,
-    isThinking,
   } = useGameStore();
 
-  // Only run timer for human player (not AI)
-  const isGameActive = gameStarted && !gameResult && !isThinking;
+  // Run timer for both human and AI, as long as game is active
+  const isGameActive = gameStarted && !gameResult;
 
   const onTimeUp = (color: 'white' | 'black') => {
     const winner = color === 'white' ? 'black' : 'white';
@@ -35,41 +34,30 @@ export function ChessTimer() {
 
   useEffect(() => {
     if (!isGameActive || !activeColor) return;
-
-    let lastUpdate = Date.now();
     
+    // Use exactly 1 second intervals for consistent countdown
     const interval = setInterval(() => {
-      const now = Date.now();
-      const elapsedMs = now - lastUpdate;
+      const currentTime = activeColor === 'white' ? whiteRef.current : blackRef.current;
+      // Subtract exactly 1 second to make timer count correctly
+      const newTime = Math.max(0, currentTime - 1);
       
-      // Update time every 100ms for smoother countdown
-      if (elapsedMs >= 100) {
-        const elapsedSeconds = elapsedMs / 1000;
-        const currentTime = activeColor === 'white' ? whiteRef.current : blackRef.current;
-        const newTime = Math.max(0, currentTime - elapsedSeconds);
-        
-        // Only update if time has changed significantly
-        if (Math.abs(currentTime - newTime) >= 0.1) {
-          onTimeUpdateRef.current(activeColor, newTime);
-          if (newTime === 0) {
-            onTimeUpRef.current(activeColor);
-          }
-          lastUpdate = now;
-        }
+      onTimeUpdateRef.current(activeColor, newTime);
+      if (newTime === 0) {
+        onTimeUpRef.current(activeColor);
       }
-    }, 50);
+    }, 1000); // Update exactly once per second
 
     return () => clearInterval(interval);
   }, [activeColor, isGameActive]);
 
   const formatTime = (seconds: number): string => {
+    // Always show time as whole numbers, no decimals
     if (seconds < 60) {
-      // Show seconds with one decimal when under 1 minute
+      // Just show seconds for times under a minute
       const secs = Math.floor(seconds);
-      const tenths = Math.floor((seconds - secs) * 10);
-      return `${secs}.${tenths}`;
+      return `${secs}`;
     } else {
-      // Show only minutes and seconds
+      // Show as minutes:seconds
       const minutes = Math.floor(seconds / 60);
       const secs = Math.floor(seconds % 60);
       return `${minutes}:${secs.toString().padStart(2, '0')}`;

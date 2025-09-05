@@ -54,9 +54,9 @@ export const useGameStore = create<GameStore>((set) => ({
   
   updateTime: (color, time) => set((state) => {
     const timeKey = color === 'white' ? 'whiteTime' : 'blackTime';
-    const newTime = Math.max(0, Math.floor(time * 10) / 10); // Round to 0.1s precision
-    
-    console.log(`Updating ${color} time: ${state[timeKey]}s -> ${newTime}s`);
+    // Store with 1 decimal place precision for proper time tracking
+    // but display will be formatted as whole numbers
+    const newTime = Math.max(0, Math.round(time * 10) / 10);
     
     // Check for time forfeit
     if (newTime === 0 && state.gameStarted && !state.gameResult) {

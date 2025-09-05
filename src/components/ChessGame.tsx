@@ -76,9 +76,14 @@ export function ChessGame() {
                      (gameStore.playerSide === 'black' && game.turn() === 'w');
     
     if (!isAiTurn) return;
-
+    
+    // Start AI thinking and set active color to AI's side (so timer runs for AI)
     setIsAiThinking(true);
     gameStore.setThinking(true);
+    gameStore.setActiveColor(game.turn() === 'w' ? 'white' : 'black');
+    
+    // Store current time to calculate elapsed time at the end
+    aiThinkStartTimeRef.current = Date.now();
     
     // Calculate AI thinking time based on difficulty
     const baseTime = 1000; // 1 second base
@@ -159,20 +164,15 @@ export function ChessGame() {
           const evaluation = evaluatePosition(newGame);
           gameStore.setEvaluation(evaluation);
           
-          // Update timer
+          // Add time increment after move is completed
           const aiColor = gameStore.playerSide === 'white' ? 'black' : 'white';
-          const currentTime = aiColor === 'white' ? gameStore.whiteTime : gameStore.blackTime;
-          const elapsedSeconds = Math.max(1, Math.ceil(thinkTime / 1000));
-          const newTime = Math.max(0, currentTime - elapsedSeconds);
-          gameStore.updateTime(aiColor, newTime);
-          
-          // Add increment
           const increment = gameStore.timeControl.increment || 0;
-          if (increment > 0 && newTime > 0) {
-            setTimeout(() => {
-              const timeAfterMove = aiColor === 'white' ? gameStore.whiteTime : gameStore.blackTime;
-              gameStore.updateTime(aiColor, timeAfterMove + increment);
-            }, 100);
+          
+          if (increment > 0) {
+            const currentTime = aiColor === 'white' ? gameStore.whiteTime : gameStore.blackTime;
+            if (currentTime > 0) { // Only add increment if player hasn't lost on time
+              gameStore.updateTime(aiColor, currentTime + increment);
+            }
           }
           
           gameStore.setActiveColor(newGame.turn() === 'w' ? 'white' : 'black');
@@ -339,10 +339,12 @@ export function ChessGame() {
         const evaluation = evaluatePosition(newGame);
         gameStore.setEvaluation(evaluation);
         
-        gameStore.setActiveColor(newGame.turn() === 'w' ? 'white' : 'black');
-        // Add increment to the mover (opposite of side to move now)
+        // Calculate the player who just moved and add increment
         const mover: 'white' | 'black' = newGame.turn() === 'w' ? 'black' : 'white';
         addTimeIncrementFor(mover);
+        
+        // Set active color for the next player's timer to count down
+        gameStore.setActiveColor(newGame.turn() === 'w' ? 'white' : 'black');
         // Check for game end conditions and always set result
         if (newGame.isGameOver()) {
           let winner: 'white' | 'black' | null = null;
@@ -540,19 +542,42 @@ export function ChessGame() {
     return styles;
   };
 
-  // Initialize evaluation and AI on game start
+  // Ref to track if initial evaluation has been done
+  const initialEvalDoneRef = useRef(false);
+  
+  // Initialize AI move on game start
   useEffect(() => {
     if (gameStore.gameStarted) {
-      // Set initial evaluation
-      const evaluation = evaluatePosition(game);
-      gameStore.setEvaluation(evaluation);
-      
       // If AI should move first (player chose black), request AI move
       if (gameStore.mode === 'computer' && gameStore.playerSide === 'black') {
         setTimeout(() => makeAiMove(), 500);
       }
     }
-  }, [gameStore.gameStarted, makeAiMove]);
+  }, [gameStore.gameStarted, gameStore.mode, gameStore.playerSide, makeAiMove]);
+  
+  // This separate effect only runs when the game position changes (not on every render)
+  const gamePositionRef = useRef(game.fen());
+  
+  useEffect(() => {
+    // Only update evaluation when game position actually changes and game has started
+    const currentPosition = game.fen();
+    
+    if (gameStore.gameStarted && currentPosition !== gamePositionRef.current) {
+      // Update our position ref
+      gamePositionRef.current = currentPosition;
+      
+      // Set initial evaluation only once at startup
+      if (!initialEvalDoneRef.current) {
+        initialEvalDoneRef.current = true;
+        const evaluation = evaluatePosition(game);
+        gameStore.setEvaluation(evaluation);
+      } else if (!isAiThinking) {
+        // For subsequent game changes, only update when not thinking
+        const evaluation = evaluatePosition(game);
+        gameStore.setEvaluation(evaluation);
+      }
+    }
+  }, [game]);
 
   // Check if it's player's turn (for computer mode)
   const isPlayerTurn = () => {
