@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Chess, Square } from 'chess.js';
 import { Chessboard } from 'react-chessboard';
 import { useGameStore } from '../store/gameStore';
-import { useStockfish } from '../hooks/useStockfish';
+import { evaluatePosition } from '../utils/evaluation';
 import { ChessTimer } from './ChessTimer';
 import { EvaluationBar } from './EvaluationBar';
 import { MoveList } from './MoveList';
@@ -18,6 +18,7 @@ export function ChessGame() {
   const [historySan, setHistorySan] = useState<string[]>([]);
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
   const [legalMoves, setLegalMoves] = useState<Square[]>([]);
+  const [isAiThinking, setIsAiThinking] = useState(false);
   const [promotionData, setPromotionData] = useState<{
     from: Square;
     to: Square;
@@ -27,6 +28,127 @@ export function ChessGame() {
   const gameRef = useRef(game);
   const boardContainerRef = useRef<HTMLDivElement | null>(null);
   const aiThinkStartTimeRef = useRef<number>(0);
+
+  // Simple AI that picks random legal moves with some basic strategy
+  const makeAiMove = useCallback(() => {
+    if (!gameStore.gameStarted || gameStore.gameResult || game.isGameOver()) {
+      return;
+    }
+
+    const isAiTurn = (gameStore.playerSide === 'white' && game.turn() === 'b') ||
+                     (gameStore.playerSide === 'black' && game.turn() === 'w');
+    
+    if (!isAiTurn) return;
+
+    setIsAiThinking(true);
+    gameStore.setThinking(true);
+    
+    // Calculate AI thinking time based on difficulty
+    const baseTime = 1000; // 1 second base
+    const levelMultiplier = (11 - gameStore.aiStrength) * 200; // Easier = slower
+    const thinkTime = baseTime + levelMultiplier + (Math.random() * 1000);
+    
+    setTimeout(() => {
+      try {
+        const moves = game.moves({ verbose: true });
+        if (moves.length === 0) {
+          setIsAiThinking(false);
+          gameStore.setThinking(false);
+          return;
+        }
+
+        let selectedMove;
+        
+        // AI strategy based on difficulty level
+        if (gameStore.aiStrength <= 3) {
+          // Easy: Random moves
+          selectedMove = moves[Math.floor(Math.random() * moves.length)];
+        } else if (gameStore.aiStrength <= 6) {
+          // Medium: Prefer captures and checks
+          const captures = moves.filter(move => move.captured);
+          const checks = moves.filter(move => {
+            const testGame = new Chess(game.fen());
+            testGame.move(move);
+            return testGame.inCheck();
+          });
+          
+          if (captures.length > 0 && Math.random() < 0.7) {
+            selectedMove = captures[Math.floor(Math.random() * captures.length)];
+          } else if (checks.length > 0 && Math.random() < 0.5) {
+            selectedMove = checks[Math.floor(Math.random() * checks.length)];
+          } else {
+            selectedMove = moves[Math.floor(Math.random() * moves.length)];
+          }
+        } else {
+          // Hard: Evaluate moves and pick best ones
+          let bestMoves = [];
+          let bestScore = gameStore.playerSide === 'white' ? Infinity : -Infinity;
+          
+          for (const move of moves) {
+            const testGame = new Chess(game.fen());
+            testGame.move(move);
+            const score = evaluatePosition(testGame);
+            
+            if (gameStore.playerSide === 'white') {
+              // AI is black, wants lower scores
+              if (score < bestScore) {
+                bestScore = score;
+                bestMoves = [move];
+              } else if (score === bestScore) {
+                bestMoves.push(move);
+              }
+            } else {
+              // AI is white, wants higher scores
+              if (score > bestScore) {
+                bestScore = score;
+                bestMoves = [move];
+              } else if (score === bestScore) {
+                bestMoves.push(move);
+              }
+            }
+          }
+          
+          selectedMove = bestMoves[Math.floor(Math.random() * bestMoves.length)];
+        }
+
+        // Make the AI move
+        const move = game.move(selectedMove);
+        if (move) {
+          const newGame = cloneWithHistory(game);
+          setGame(newGame);
+          updateHistory(newGame);
+          
+          // Update evaluation
+          const evaluation = evaluatePosition(newGame);
+          gameStore.setEvaluation(evaluation);
+          
+          // Update timer
+          const aiColor = gameStore.playerSide === 'white' ? 'black' : 'white';
+          const currentTime = aiColor === 'white' ? gameStore.whiteTime : gameStore.blackTime;
+          const elapsedSeconds = Math.max(1, Math.ceil(thinkTime / 1000));
+          const newTime = Math.max(0, currentTime - elapsedSeconds);
+          gameStore.updateTime(aiColor, newTime);
+          
+          // Add increment
+          const increment = gameStore.timeControl.increment || 0;
+          if (increment > 0 && newTime > 0) {
+            setTimeout(() => {
+              const timeAfterMove = aiColor === 'white' ? gameStore.whiteTime : gameStore.blackTime;
+              gameStore.updateTime(aiColor, timeAfterMove + increment);
+            }, 100);
+          }
+          
+          gameStore.setActiveColor(newGame.turn() === 'w' ? 'white' : 'black');
+          checkGameEnd(newGame);
+        }
+      } catch (error) {
+        console.error('AI move error:', error);
+      } finally {
+        setIsAiThinking(false);
+        gameStore.setThinking(false);
+      }
+    }, thinkTime);
+  }, [game, gameStore, cloneWithHistory, updateHistory, checkGameEnd]);
 
   // Helper: clone current game while preserving full move history
   const cloneWithHistory = useCallback((g: Chess): Chess => {
@@ -42,136 +164,10 @@ export function ChessGame() {
     setHistorySan(gameInstance.history());
   }, []);
 
-  // Stockfish integration
-  const { findBestMove, analyzePosition, isReady } = useStockfish(
-    (move) => {
-      if (move && gameStore.mode === 'computer' && gameStore.gameStarted && !gameStore.gameResult) {
-        const isAiTurn = (gameStore.playerSide === 'white' && game.turn() === 'b') ||
-                         (gameStore.playerSide === 'black' && game.turn() === 'w');
-        if (isAiTurn) {
-          handleAiMove(move);
-        }
-      }
-      gameStore.setThinking(false);
-    },
-    (score) => {
-      gameStore.setEvaluation(score);
-    },
-    () => {
-      console.log('AI is ready');
-      if (gameStore.gameStarted && gameStore.mode === 'computer') {
-        requestAiMove();
-      }
-    }
-  );
-
-  // Global multiplier to slow down or speed up AI thinking across all levels
-  // Lower values make the AI use more of its clock time
-  const AI_THINK_MULTIPLIER = 2;
-
   // Update game reference when game state changes
   useEffect(() => {
     gameRef.current = game;
   }, [game]);
-
-  // Request AI move
-  const requestAiMove = useCallback(() => {
-    if (!isReady || gameStore.isThinking || gameStore.gameResult) return;
-    if (gameStore.mode !== 'computer') return;
-    const isAiTurn = (gameStore.playerSide === 'white' && game.turn() === 'b') ||
-                     (gameStore.playerSide === 'black' && game.turn() === 'w');
-    if (!isAiTurn) return;
-
-    // Record AI thinking start time and set active color
-    const aiColor = game.turn() === 'w' ? 'white' : 'black';
-    aiThinkStartTimeRef.current = Date.now();
-    gameStore.setActiveColor(aiColor);
-    gameStore.setThinking(true);
-    // Map menu AI level (1..10) to engine skill level (0..20)
-    const menuLevel = Math.max(1, Math.min(10, gameStore.aiStrength));
-    const engineSkill = Math.round((menuLevel - 1) * (20 / 9));
-    
-    // Calculate thinking time based on level:
-    // - Add more variability based on difficulty level
-    // - Lower levels (easier) think longer to simulate human thinking
-    // - Exponential scaling to make difference more pronounced
-    
-    // Base thinking time is higher for lower levels (slower thinking)
-    const levelFactor = Math.pow(12 - menuLevel, 1.5);
-    
-    // Add some randomness to make AI seem more human-like (±20%)
-    const randomFactor = 0.8 + (Math.random() * 0.4);
-    
-    // Base per-move time in ms before scaling
-    const baseMs = 3000; // 3 seconds baseline minimum
-    const thinkTime = Math.max(3000, baseMs * AI_THINK_MULTIPLIER * levelFactor * randomFactor);
-
-    // Get remaining times in milliseconds
-    const wtimeMs = Math.max(0, gameStore.whiteTime * 1000);
-    const btimeMs = Math.max(0, gameStore.blackTime * 1000);
-    const incMs = Math.max(0, (gameStore.timeControl.increment || 0) * 1000);
-    
-    // Log time info for debugging
-    console.log(`AI thinking time: ${thinkTime}ms, White: ${wtimeMs}ms, Black: ${btimeMs}ms, Inc: ${incMs}ms`);
-
-    setTimeout(() => {
-      findBestMove(
-        game.fen(),
-        engineSkill,
-        10,
-        thinkTime,
-        wtimeMs,
-        btimeMs,
-        incMs,
-        incMs
-      );
-    }, 200);
-  }, [isReady, gameStore.isThinking, gameStore.gameResult, gameStore.aiStrength, game, findBestMove, gameStore.mode, gameStore.playerSide]);
-
-  // Handle AI moves
-  const handleAiMove = (moveString: string) => {
-    try {
-      // Convert UCI format (e2e4) to move object
-      const from = moveString.slice(0, 2) as Square;
-      const to = moveString.slice(2, 4) as Square;
-      const promotion = moveString.slice(4) || undefined;
-      
-      const move = game.move({ from, to, promotion });
-      if (move) {
-        const newGame = cloneWithHistory(game);
-        setGame(newGame);
-        updateHistory(newGame);
-
-        // Always update AI timer based on actual thinking time
-        const aiColor = gameStore.playerSide === 'white' ? 'black' : 'white';
-        const currentTime = aiColor === 'white' ? gameStore.whiteTime : gameStore.blackTime;
-        const elapsedMs = Date.now() - aiThinkStartTimeRef.current;
-        const elapsedSeconds = Math.max(2, Math.ceil(elapsedMs / 1000)); // Ensure minimum 2 seconds used
-        const newTime = Math.max(0, currentTime - elapsedSeconds);
-
-  gameStore.updateTime(aiColor, newTime);
-  setAiTimerTick(t => t + 1); // Force re-render so timer display updates
-
-        // Only proceed with the rest if the AI hasn't lost on time
-        if (newTime > 0) {
-          gameStore.setActiveColor(newGame.turn() === 'w' ? 'white' : 'black');
-          // Add increment after a short delay to ensure time update is processed
-          setTimeout(() => {
-            const increment = gameStore.timeControl.increment || 0;
-            if (increment > 0) {
-              const currentTimeAfterMove = aiColor === 'white' ? gameStore.whiteTime : gameStore.blackTime;
-              gameStore.updateTime(aiColor, currentTimeAfterMove + increment);
-            }
-          }, 50);
-          checkGameEnd(newGame);
-          setTimeout(() => analyzePosition(newGame.fen()), 100);
-        }
-      }
-    } catch (error) {
-      console.error('Invalid AI move:', error);
-      gameStore.setThinking(false);
-    }
-  };
 
   // Add time increment to the player who just moved
   const addTimeIncrementFor = (mover: 'white' | 'black') => {
@@ -338,6 +334,11 @@ export function ChessGame() {
         updateHistory(newGame);
         setSelectedSquare(null);
         setLegalMoves([]);
+        
+        // Update evaluation after move
+        const evaluation = evaluatePosition(newGame);
+        gameStore.setEvaluation(evaluation);
+        
         gameStore.setActiveColor(newGame.turn() === 'w' ? 'white' : 'black');
         // Add increment to the mover (opposite of side to move now)
         const mover: 'white' | 'black' = newGame.turn() === 'w' ? 'black' : 'white';
@@ -370,9 +371,8 @@ export function ChessGame() {
           !newGame.isGameOver()
         );
         if (aiShouldMove) {
-          setTimeout(() => requestAiMove(), 300);
+          setTimeout(() => makeAiMove(), 300);
         }
-        setTimeout(() => analyzePosition(newGame.fen()), 200);
         return true;
       }
     } catch (error) {
@@ -473,14 +473,17 @@ export function ChessGame() {
     gameStore.setPlayerSide(currentSide);
     gameStore.setTimeControl(currentTime);
     gameStore.setActiveColor('white');
-    gameStore.setEvaluation(0);
+    
+    // Set initial evaluation
+    const initialEval = evaluatePosition(new Chess());
+    gameStore.setEvaluation(initialEval);
+    
     gameStore.startGame();
     // If AI should move first
     if (currentMode === 'computer' && currentSide === 'black') {
-      setTimeout(() => requestAiMove(), 400);
+      setTimeout(() => makeAiMove(), 400);
     }
-    setTimeout(() => analyzePosition(new Chess().fen()), 100);
-  }, [gameStore, analyzePosition, requestAiMove]);
+  }, [gameStore, makeAiMove]);
 
   const handleUndo = () => {
     if (game.history().length > 0) {
@@ -495,7 +498,10 @@ export function ChessGame() {
       if (gameStore.gameResult) {
         gameStore.startGame();
       }
-      analyzePosition(newGame.fen());
+      
+      // Update evaluation after undo
+      const evaluation = evaluatePosition(newGame);
+      gameStore.setEvaluation(evaluation);
     }
   };
 
@@ -536,15 +542,17 @@ export function ChessGame() {
 
   // Initialize evaluation and AI on game start
   useEffect(() => {
-    if (gameStore.gameStarted && isReady) {
-      analyzePosition(game.fen());
+    if (gameStore.gameStarted) {
+      // Set initial evaluation
+      const evaluation = evaluatePosition(game);
+      gameStore.setEvaluation(evaluation);
       
       // If AI should move first (player chose black), request AI move
       if (gameStore.mode === 'computer' && gameStore.playerSide === 'black') {
-        setTimeout(() => requestAiMove(), 500);
+        setTimeout(() => makeAiMove(), 500);
       }
     }
-  }, [gameStore.gameStarted, isReady]);
+  }, [gameStore.gameStarted, makeAiMove]);
 
   // Check if it's player's turn (for computer mode)
   const isPlayerTurn = () => {
@@ -565,7 +573,7 @@ export function ChessGame() {
           activeColor={gameStore.activeColor}
           isInCheck={game.inCheck()}
           gameResult={gameStore.gameResult}
-          isThinking={gameStore.isThinking}
+          isThinking={isAiThinking}
         />
         
         {/* Timers */}
