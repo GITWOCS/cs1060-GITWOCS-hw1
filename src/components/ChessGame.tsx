@@ -28,6 +28,43 @@ export function ChessGame() {
   const gameRef = useRef(game);
   const boardContainerRef = useRef<HTMLDivElement | null>(null);
   const aiThinkStartTimeRef = useRef<number>(0);
+  // Helper: clone current game while preserving full move history
+  const cloneWithHistory = useCallback((g: Chess): Chess => {
+    const newGame = new Chess();
+    const history = g.history({ verbose: true });
+    for (const move of history) {
+      newGame.move({ from: move.from, to: move.to, promotion: move.promotion });
+    }
+    return newGame;
+  }, []);
+
+  const updateHistory = useCallback((gameInstance: Chess) => {
+    setHistorySan(gameInstance.history());
+  }, []);
+
+  // Check for game end conditions
+  const checkGameEnd = useCallback((currentGame: Chess) => {
+    if (currentGame.isGameOver()) {
+      let winner: 'white' | 'black' | null = null;
+      let reason = '';
+
+      if (currentGame.isCheckmate()) {
+        winner = currentGame.turn() === 'w' ? 'black' : 'white';
+        reason = 'checkmate';
+      } else if (currentGame.isStalemate()) {
+        reason = 'stalemate';
+      } else if (currentGame.isThreefoldRepetition()) {
+        reason = 'threefold repetition';
+      } else if (currentGame.isInsufficientMaterial()) {
+        reason = 'insufficient material';
+      } else if (currentGame.isDraw()) {
+        reason = '50-move rule';
+      }
+
+      gameStore.endGame({ winner, reason });
+    }
+  }, [gameStore]);
+
 
   // Simple AI that picks random legal moves with some basic strategy
   const makeAiMove = useCallback(() => {
@@ -149,20 +186,6 @@ export function ChessGame() {
       }
     }, thinkTime);
   }, [game, gameStore, cloneWithHistory, updateHistory, checkGameEnd]);
-
-  // Helper: clone current game while preserving full move history
-  const cloneWithHistory = useCallback((g: Chess): Chess => {
-    const newGame = new Chess();
-    const history = g.history({ verbose: true });
-    for (const move of history) {
-      newGame.move({ from: move.from, to: move.to, promotion: move.promotion });
-    }
-    return newGame;
-  }, []);
-
-  const updateHistory = useCallback((gameInstance: Chess) => {
-    setHistorySan(gameInstance.history());
-  }, []);
 
   // Update game reference when game state changes
   useEffect(() => {
