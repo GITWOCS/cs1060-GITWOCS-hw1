@@ -201,29 +201,6 @@ export function ChessGame() {
     }
   };
 
-  // Check for game end conditions
-  const checkGameEnd = (currentGame: Chess) => {
-    if (currentGame.isGameOver()) {
-      let winner: 'white' | 'black' | null = null;
-      let reason = '';
-
-      if (currentGame.isCheckmate()) {
-        winner = currentGame.turn() === 'w' ? 'black' : 'white';
-        reason = 'checkmate';
-      } else if (currentGame.isStalemate()) {
-        reason = 'stalemate';
-      } else if (currentGame.isThreefoldRepetition()) {
-        reason = 'threefold repetition';
-      } else if (currentGame.isInsufficientMaterial()) {
-        reason = 'insufficient material';
-      } else if (currentGame.isDraw()) {
-        reason = '50-move rule';
-      }
-
-      gameStore.endGame({ winner, reason });
-    }
-  };
-
   // Handle piece drop (drag and drop) - STRICT VALIDATION
   const onDrop = (sourceSquare: Square, targetSquare: Square) => {
     // Prevent any moves if game is not active
