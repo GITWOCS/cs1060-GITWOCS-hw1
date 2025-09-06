@@ -55,7 +55,12 @@ export function ChessGame() {
       gameStore.setThinking(false);
     },
     (score) => {
-      gameStore.setEvaluation(score);
+      // Update evaluation with less dampening for more responsive feedback
+      const currentEval = gameStore.evaluationScore;
+      const threshold = 0.05; // Smaller threshold for more frequent updates
+      if (Math.abs(score - currentEval) > threshold) {
+        gameStore.setEvaluation(score);
+      }
     },
     () => {
       console.log('AI is ready');
@@ -66,8 +71,8 @@ export function ChessGame() {
   );
 
   // Global multiplier to slow down or speed up AI thinking across all levels
-  // Lower values make the AI use more of its clock time
-  const AI_THINK_MULTIPLIER = 2;
+  // Make AI much slower at beginner levels to simulate human thinking
+  const AI_THINK_MULTIPLIER = gameStore.aiStrength <= 3 ? 15 : gameStore.aiStrength <= 5 ? 8 : 4;
 
   // Update game reference when game state changes
   useEffect(() => {
@@ -118,7 +123,7 @@ export function ChessGame() {
       findBestMove(
         game.fen(),
         engineSkill,
-        10,
+        20, // Increased depth for better analysis
         thinkTime,
         wtimeMs,
         btimeMs,
@@ -146,11 +151,11 @@ export function ChessGame() {
         const aiColor = gameStore.playerSide === 'white' ? 'black' : 'white';
         const currentTime = aiColor === 'white' ? gameStore.whiteTime : gameStore.blackTime;
         const elapsedMs = Date.now() - aiThinkStartTimeRef.current;
-        const elapsedSeconds = Math.max(2, Math.ceil(elapsedMs / 1000)); // Ensure minimum 2 seconds used
+        const elapsedSeconds = Math.ceil(elapsedMs / 1000);
         const newTime = Math.max(0, currentTime - elapsedSeconds);
 
-  gameStore.updateTime(aiColor, newTime);
-  setAiTimerTick(t => t + 1); // Force re-render so timer display updates
+        gameStore.updateTime(aiColor, newTime);
+        setAiTimerTick(t => t + 1); // Force re-render so timer display updates
 
         // Only proceed with the rest if the AI hasn't lost on time
         if (newTime > 0) {
@@ -537,7 +542,10 @@ export function ChessGame() {
   // Initialize evaluation and AI on game start
   useEffect(() => {
     if (gameStore.gameStarted && isReady) {
-      analyzePosition(game.fen());
+      // Start with neutral evaluation (50-50)
+      gameStore.setEvaluation(0);
+      // Use more depth for analysis to get stable evaluations
+      setTimeout(() => analyzePosition(game.fen()), 100);
       
       // If AI should move first (player chose black), request AI move
       if (gameStore.mode === 'computer' && gameStore.playerSide === 'black') {
