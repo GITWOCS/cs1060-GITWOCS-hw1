@@ -587,13 +587,15 @@ export function ChessGame() {
               >
                 Copy FEN
               </button>
-              <button
-                onClick={handleUndo}
-                className="bg-white border-2 border-amber-500/50 hover:border-amber-400 text-amber-800 font-semibold py-2 px-4 rounded-xl transition-all duration-200"
-              >
-                Undo
-              </button>
             </div>
+            
+            {/* Full-width Undo button */}
+            <button
+              onClick={handleUndo}
+              className="w-full mt-2 bg-white border-2 border-amber-500/50 hover:border-amber-400 text-amber-800 font-semibold py-2 px-4 rounded-xl transition-all duration-200"
+            >
+              Undo Move
+            </button>
             
             {/* Game Status */}
             <div className="backdrop-blur-sm bg-white/90 rounded-xl p-3 border border-amber-500/50 shadow-md">
@@ -625,8 +627,6 @@ export function ChessGame() {
                   setLegalMoves([]);
                 }}
                 onFlipBoard={gameStore.flipBoard}
-                onToggleSound={gameStore.toggleSound}
-                soundEnabled={gameStore.soundEnabled}
                 onUndo={handleUndo}
                 allowUndo={gameStore.mode === 'human' && !gameStore.gameResult}
               />

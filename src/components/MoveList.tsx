@@ -25,7 +25,7 @@ export function MoveList({
   }, [historySan]);
 
   return (
-    <div className="bg-white rounded-xl shadow-lg p-4 flex flex-col" style={{ maxHeight: compactView ? '250px' : '350px' }}>
+    <div className="bg-white rounded-xl p-4 flex flex-col" style={{ maxHeight: compactView ? '250px' : '350px' }}>
       <div className="flex items-center justify-between mb-2">
         <h3 className={`${compactView ? 'text-sm' : 'text-lg'} font-bold text-gray-800 flex items-center`}>
           <FileText className={`${compactView ? 'w-4 h-4' : 'w-5 h-5'} mr-2`} />
