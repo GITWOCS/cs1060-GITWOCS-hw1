@@ -28,6 +28,7 @@ export function ChessGame() {
   const gameRef = useRef(game);
   const boardContainerRef = useRef<HTMLDivElement | null>(null);
   const aiThinkStartTimeRef = useRef<number>(0);
+
   // Helper: clone current game while preserving full move history
   const cloneWithHistory = useCallback((g: Chess): Chess => {
     const newGame = new Chess();
@@ -65,8 +66,7 @@ export function ChessGame() {
     }
   }, [gameStore]);
 
-
-  // Simple AI that picks random legal moves with some basic strategy
+  // Simple AI that picks moves with some basic strategy
   const makeAiMove = useCallback(() => {
     if (!gameStore.gameStarted || gameStore.gameResult || game.isGameOver()) {
       return;
@@ -201,7 +201,7 @@ export function ChessGame() {
     }
   };
 
-  // Handle piece drop (drag and drop) - STRICT VALIDATION
+  // Handle piece drop (drag and drop)
   const onDrop = (sourceSquare: Square, targetSquare: Square) => {
     // Prevent any moves if game is not active
     if (!gameStore.gameStarted || gameStore.gameResult) {
@@ -252,7 +252,7 @@ export function ChessGame() {
     return false; // Move is illegal
   };
 
-  // Handle square click - STRICT VALIDATION
+  // Handle square click
   const handleSquareClick = (square: Square) => {
     if (!gameStore.gameStarted || gameStore.gameResult) return;
 
@@ -324,7 +324,7 @@ export function ChessGame() {
     }
   };
 
-  // Make the actual move - ONLY if legal
+  // Make the actual move
   const makeMove = (from: Square, to: Square, promotion?: 'q' | 'r' | 'b' | 'n') => {
     try {
       const move = game.move({ from, to, promotion });
@@ -345,25 +345,10 @@ export function ChessGame() {
         
         // Set active color for the next player's timer to count down
         gameStore.setActiveColor(newGame.turn() === 'w' ? 'white' : 'black');
-        // Check for game end conditions and always set result
-        if (newGame.isGameOver()) {
-          let winner: 'white' | 'black' | null = null;
-          let reason = '';
-          if (newGame.isCheckmate()) {
-            winner = newGame.turn() === 'w' ? 'black' : 'white';
-            reason = 'checkmate';
-          } else if (newGame.isStalemate()) {
-            reason = 'stalemate';
-          } else if (newGame.isThreefoldRepetition()) {
-            reason = 'threefold repetition';
-          } else if (newGame.isInsufficientMaterial()) {
-            reason = 'insufficient material';
-          } else if (newGame.isDraw()) {
-            reason = '50-move rule';
-          }
-          gameStore.endGame({ winner, reason });
-        }
-        // If against computer and it's now AI's turn, always request AI move
+        // Check for game end conditions
+        checkGameEnd(newGame);
+        
+        // If against computer and it's now AI's turn, request AI move
         const aiShouldMove = (
           gameStore.mode === 'computer' &&
           (
@@ -372,6 +357,7 @@ export function ChessGame() {
           ) &&
           !newGame.isGameOver()
         );
+        
         if (aiShouldMove) {
           setTimeout(() => makeAiMove(), 300);
         }
@@ -413,8 +399,7 @@ export function ChessGame() {
     navigator.clipboard.writeText(game.fen());
   };
 
-
-  // Start a fresh game with the same mode/side/time settings
+  // Start a fresh game with the same settings
   const startNewGameSameSettings = useCallback(() => {
     const currentMode = gameStore.mode;
     const currentSide = gameStore.playerSide;
@@ -494,9 +479,13 @@ export function ChessGame() {
     return styles;
   };
 
-  // Ref to track if initial evaluation has been done
-  const initialEvalDoneRef = useRef(false);
-  
+  // Check if it's player's turn (for computer mode)
+  const isPlayerTurn = () => {
+    if (gameStore.mode === 'human') return true;
+    return (gameStore.playerSide === 'white' && game.turn() === 'w') ||
+           (gameStore.playerSide === 'black' && game.turn() === 'b');
+  };
+
   // Initialize AI move on game start
   useEffect(() => {
     if (gameStore.gameStarted) {
@@ -507,7 +496,7 @@ export function ChessGame() {
     }
   }, [gameStore.gameStarted, gameStore.mode, gameStore.playerSide, makeAiMove]);
   
-  // This separate effect only runs when the game position changes (not on every render)
+  // This separate effect only runs when the game position changes
   const gamePositionRef = useRef(game.fen());
   
   useEffect(() => {
@@ -518,49 +507,35 @@ export function ChessGame() {
       // Update our position ref
       gamePositionRef.current = currentPosition;
       
-      // Set initial evaluation only once at startup
-      if (!initialEvalDoneRef.current) {
-        initialEvalDoneRef.current = true;
-        const evaluation = evaluatePosition(game);
-        gameStore.setEvaluation(evaluation);
-      } else if (!isAiThinking) {
-        // For subsequent game changes, only update when not thinking
+      // Update evaluation if not AI thinking
+      if (!isAiThinking) {
         const evaluation = evaluatePosition(game);
         gameStore.setEvaluation(evaluation);
       }
     }
-  }, [game]);
-
-  // Check if it's player's turn (for computer mode)
-  const isPlayerTurn = () => {
-    if (gameStore.mode === 'human') return true;
-    return (gameStore.playerSide === 'white' && game.turn() === 'w') ||
-           (gameStore.playerSide === 'black' && game.turn() === 'b');
-  };
+  }, [game, gameStore, isAiThinking]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-100 p-4">
+    <div 
+      className="min-h-screen w-full p-4"
+      style={{
+        backgroundImage: `url('https://img.freepik.com/free-photo/brown-wooden-textured-flooring-background_53876-128616.jpg')`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat'
+      }}
+    >
       <div className="max-w-7xl mx-auto">
         {/* Evaluation Bar */}
-        <EvaluationBar score={gameStore.evaluationScore} />
-        
-        {/* Game Status */}
-        <GameStatus
-          isGameActive={gameStore.gameStarted && !gameStore.gameResult}
-          activeColor={gameStore.activeColor}
-          isInCheck={game.inCheck()}
-          gameResult={gameStore.gameResult}
-          isThinking={isAiThinking}
-        />
-        
-        {/* Timers */}
-        <ChessTimer />
+        <div className="backdrop-blur-sm bg-stone-900/50 rounded-xl p-2 border border-amber-900/50 mb-2">
+          <EvaluationBar score={gameStore.evaluationScore} />
+        </div>
 
         {/* Main Game Area */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Chess Board */}
           <div className="lg:col-span-2">
-            <div className="bg-white rounded-2xl shadow-2xl p-6" ref={boardContainerRef}>
+            <div className="bg-stone-800/90 backdrop-blur-sm rounded-2xl shadow-2xl p-6 border border-amber-900/50" ref={boardContainerRef}>
               <Chessboard
                 position={game.fen()}
                 onSquareClick={handleSquareClick}
@@ -582,47 +557,75 @@ export function ChessGame() {
             </div>
           </div>
 
-          {/* Move List and Controls */}
+          {/* Right Panel with Move List, Game Status and Timers */}
           <div className="space-y-4">
-            <MoveList
-              historySan={historySan}
-              onCopyPgn={handleCopyPgn}
-              onDownloadPgn={handleDownloadPgn}
-              onCopyFen={handleCopyFen}
-              onUndo={handleUndo}
-              allowUndo={!gameStore.gameResult}
-            />
-          </div>
-        </div>
-
-        {/* Game Controls */}
-        <div className="mt-6 flex flex-col gap-3">
-          <GameControls
-            onNewGame={() => {
-              setGame(new Chess());
-              gameStore.resetGame();
-              setSelectedSquare(null);
-              setLegalMoves([]);
-            }}
-            onFlipBoard={gameStore.flipBoard}
-            onToggleSound={gameStore.toggleSound}
-            soundEnabled={gameStore.soundEnabled}
-            onUndo={handleUndo}
-            allowUndo={gameStore.mode === 'human' && !gameStore.gameResult}
-          />
-          {/* Forfeit Button */}
-          {gameStore.gameStarted && !gameStore.gameResult && (
-            <button
-              className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-xl transition-all duration-200"
-              onClick={() => {
-                // Forfeit: declare opponent as winner
-                const winner = isPlayerTurn() ? (gameStore.playerSide === 'white' ? 'black' : 'white') : gameStore.playerSide;
-                gameStore.endGame({ winner, reason: 'forfeit' });
-              }}
+            {/* Move List with reduced height */}
+            <div 
+              className="bg-stone-800/90 backdrop-blur-sm rounded-2xl shadow-2xl p-4 border border-amber-900/50 overflow-auto" 
+              style={{ maxHeight: '40vh' }}
             >
-              Forfeit
-            </button>
-          )}
+              <h3 className="text-amber-200 font-medium mb-2 text-sm">Move History</h3>
+              <MoveList
+                historySan={historySan}
+                onCopyPgn={handleCopyPgn}
+                onDownloadPgn={handleDownloadPgn}
+                onCopyFen={handleCopyFen}
+                onUndo={handleUndo}
+                allowUndo={!gameStore.gameResult}
+                compactView={true}
+              />
+            </div>
+            
+            {/* Game Status */}
+            <div className="backdrop-blur-sm bg-stone-900/50 rounded-xl p-3 border border-amber-900/50">
+              <h3 className="text-amber-200 font-medium mb-1 text-sm">Game Status</h3>
+              <GameStatus
+                isGameActive={gameStore.gameStarted && !gameStore.gameResult}
+                activeColor={gameStore.activeColor}
+                isInCheck={game.inCheck()}
+                gameResult={gameStore.gameResult}
+                isThinking={isAiThinking}
+                compactView={true}
+              />
+            </div>
+            
+            {/* Timers */}
+            <div className="backdrop-blur-sm bg-stone-900/50 rounded-xl p-3 border border-amber-900/50">
+              <h3 className="text-amber-200 font-medium mb-1 text-sm">Time Control</h3>
+              <ChessTimer compactView={true} />
+            </div>
+
+            {/* Game Controls */}
+            <div className="backdrop-blur-sm bg-stone-800/90 rounded-2xl shadow-2xl p-4 border border-amber-900/50 mt-2">
+              <GameControls
+                onNewGame={() => {
+                  setGame(new Chess());
+                  gameStore.resetGame();
+                  setSelectedSquare(null);
+                  setLegalMoves([]);
+                }}
+                onFlipBoard={gameStore.flipBoard}
+                onToggleSound={gameStore.toggleSound}
+                soundEnabled={gameStore.soundEnabled}
+                onUndo={handleUndo}
+                allowUndo={gameStore.mode === 'human' && !gameStore.gameResult}
+              />
+              
+              {/* Forfeit Button */}
+              {gameStore.gameStarted && !gameStore.gameResult && (
+                <button
+                  className="w-full mt-3 bg-gradient-to-r from-red-800 to-red-950 hover:from-red-700 hover:to-red-900 text-red-100 font-bold py-2 px-4 rounded-xl transition-all duration-200 border border-red-700/50"
+                  onClick={() => {
+                    // Forfeit: declare opponent as winner
+                    const winner = isPlayerTurn() ? (gameStore.playerSide === 'white' ? 'black' : 'white') : gameStore.playerSide;
+                    gameStore.endGame({ winner, reason: 'forfeit' });
+                  }}
+                >
+                  Forfeit
+                </button>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Promotion Dialog */}
@@ -631,11 +634,17 @@ export function ChessGame() {
           onSelect={handlePromotion}
           color={promotionData?.color || 'white'}
         />
-
+        
         {/* Game Result Modal */}
         {gameStore.gameResult && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate-fadeIn">
-            <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4 text-center transform animate-slideUp">
+          <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 animate-fadeIn backdrop-blur-sm">
+            <div 
+              className="bg-stone-800/90 border border-amber-900/50 rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4 text-center transform animate-slideUp"
+              style={{
+                backgroundImage: `linear-gradient(to bottom, rgba(68, 64, 60, 0.7), rgba(41, 37, 36, 0.9))`,
+                backgroundSize: 'cover'
+              }}
+            >
               <div className="mb-6">
                 {gameStore.gameResult.winner === 'white' && (
                   <div className="text-6xl mb-4 animate-bounce">👑</div>
@@ -647,20 +656,20 @@ export function ChessGame() {
                   <div className="text-6xl mb-4 animate-pulse">🤝</div>
                 )}
                 
-                <h2 className="text-2xl font-bold text-gray-800 mb-2">
+                <h2 className="text-3xl font-bold text-amber-100 mb-2 font-serif">
                   {gameStore.gameResult.winner === 'white' && 'White Wins!'}
                   {gameStore.gameResult.winner === 'black' && 'Black Wins!'}
                   {gameStore.gameResult.winner === null && 'Draw!'}
                 </h2>
                 
-                <p className="text-gray-600 capitalize">
+                <p className="text-amber-200/80 capitalize">
                   {gameStore.gameResult.reason}
                 </p>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <button
                   onClick={startNewGameSameSettings}
-                  className="w-full bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-bold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-105"
+                  className="w-full bg-gradient-to-r from-amber-800 to-amber-950 hover:from-amber-700 hover:to-amber-900 text-amber-100 font-bold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-105 shadow-lg border border-amber-600/50"
                 >
                   Play Again
                 </button>
@@ -671,7 +680,7 @@ export function ChessGame() {
                     setSelectedSquare(null);
                     setLegalMoves([]);
                   }}
-                  className="w-full bg-white border-2 border-gray-300 hover:border-gray-400 text-gray-800 font-semibold py-3 px-6 rounded-xl transition-all duration-200"
+                  className="w-full bg-stone-700 border-2 border-amber-900/50 hover:border-amber-700/70 text-amber-200 font-semibold py-3 px-6 rounded-xl transition-all duration-200"
                 >
                   Main Menu
                 </button>
@@ -679,27 +688,27 @@ export function ChessGame() {
             </div>
           </div>
         )}
+        
+        <style>{`
+          @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+          }
+          
+          @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+          }
+          
+          .animate-fadeIn {
+            animation: fadeIn 0.3s ease-out;
+          }
+          
+          .animate-slideUp {
+            animation: slideUp 0.4s ease-out;
+          }
+        `}</style>
       </div>
-      
-      <style>{`
-        @keyframes fadeIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        
-        @keyframes slideUp {
-          from { transform: translateY(20px); opacity: 0; }
-          to { transform: translateY(0); opacity: 1; }
-        }
-        
-        .animate-fadeIn {
-          animation: fadeIn 0.3s ease-out;
-        }
-        
-        .animate-slideUp {
-          animation: slideUp 0.4s ease-out;
-        }
-      `}</style>
     </div>
   );
 }
