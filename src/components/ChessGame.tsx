@@ -517,17 +517,11 @@ export function ChessGame() {
 
   return (
     <div 
-      className="min-h-screen w-full p-4"
-      style={{
-        backgroundImage: `url('https://img.freepik.com/free-photo/brown-wooden-textured-flooring-background_53876-128616.jpg')`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat'
-      }}
+      className="min-h-screen w-full p-4 bg-gradient-to-br from-amber-50 to-orange-100"
     >
       <div className="max-w-7xl mx-auto">
         {/* Evaluation Bar */}
-        <div className="backdrop-blur-sm bg-stone-900/50 rounded-xl p-2 border border-amber-900/50 mb-2">
+        <div className="backdrop-blur-sm bg-white/90 rounded-xl p-2 border border-amber-500/50 mb-2 shadow-md">
           <EvaluationBar score={gameStore.evaluationScore} />
         </div>
 
@@ -535,7 +529,7 @@ export function ChessGame() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Chess Board */}
           <div className="lg:col-span-2">
-            <div className="bg-stone-800/90 backdrop-blur-sm rounded-2xl shadow-2xl p-6 border border-amber-900/50" ref={boardContainerRef}>
+            <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-2xl p-6 border border-amber-500/50" ref={boardContainerRef}>
               <Chessboard
                 position={game.fen()}
                 onSquareClick={handleSquareClick}
@@ -559,26 +553,51 @@ export function ChessGame() {
 
           {/* Right Panel with Move List, Game Status and Timers */}
           <div className="space-y-4">
-            {/* Move List with reduced height */}
+            {/* Move List with fixed height */}
             <div 
-              className="bg-stone-800/90 backdrop-blur-sm rounded-2xl shadow-2xl p-4 border border-amber-900/50 overflow-auto" 
-              style={{ maxHeight: '40vh' }}
+              className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg p-4 border border-amber-500/50 flex flex-col" 
+              style={{ height: '300px' }}
             >
-              <h3 className="text-amber-200 font-medium mb-2 text-sm">Move History</h3>
-              <MoveList
-                historySan={historySan}
-                onCopyPgn={handleCopyPgn}
-                onDownloadPgn={handleDownloadPgn}
-                onCopyFen={handleCopyFen}
-                onUndo={handleUndo}
-                allowUndo={!gameStore.gameResult}
-                compactView={true}
-              />
+              <h3 className="text-amber-800 font-medium mb-2 text-sm">Move History</h3>
+              <div className="overflow-auto flex-grow">
+                <MoveList
+                  historySan={historySan}
+                  compactView={true}
+                />
+              </div>
+            </div>
+            
+            {/* Move Controls - Outside the moves list container */}
+            <div className="flex flex-wrap gap-2 justify-between mb-3 mt-2">
+              <button
+                onClick={handleCopyPgn}
+                className="bg-white border-2 border-amber-500/50 hover:border-amber-400 text-amber-800 font-semibold py-2 px-4 rounded-xl transition-all duration-200"
+              >
+                Copy PGN
+              </button>
+              <button
+                onClick={handleDownloadPgn}
+                className="bg-white border-2 border-amber-500/50 hover:border-amber-400 text-amber-800 font-semibold py-2 px-4 rounded-xl transition-all duration-200"
+              >
+                Download PGN
+              </button>
+              <button
+                onClick={handleCopyFen}
+                className="bg-white border-2 border-amber-500/50 hover:border-amber-400 text-amber-800 font-semibold py-2 px-4 rounded-xl transition-all duration-200"
+              >
+                Copy FEN
+              </button>
+              <button
+                onClick={handleUndo}
+                className="bg-white border-2 border-amber-500/50 hover:border-amber-400 text-amber-800 font-semibold py-2 px-4 rounded-xl transition-all duration-200"
+              >
+                Undo
+              </button>
             </div>
             
             {/* Game Status */}
-            <div className="backdrop-blur-sm bg-stone-900/50 rounded-xl p-3 border border-amber-900/50">
-              <h3 className="text-amber-200 font-medium mb-1 text-sm">Game Status</h3>
+            <div className="backdrop-blur-sm bg-white/90 rounded-xl p-3 border border-amber-500/50 shadow-md">
+              <h3 className="text-amber-800 font-medium mb-1 text-sm">Game Status</h3>
               <GameStatus
                 isGameActive={gameStore.gameStarted && !gameStore.gameResult}
                 activeColor={gameStore.activeColor}
@@ -586,17 +605,18 @@ export function ChessGame() {
                 gameResult={gameStore.gameResult}
                 isThinking={isAiThinking}
                 compactView={true}
+                lightTheme={true}
               />
             </div>
             
             {/* Timers */}
-            <div className="backdrop-blur-sm bg-stone-900/50 rounded-xl p-3 border border-amber-900/50">
-              <h3 className="text-amber-200 font-medium mb-1 text-sm">Time Control</h3>
-              <ChessTimer compactView={true} />
+            <div className="backdrop-blur-sm bg-white/90 rounded-xl p-3 border border-amber-500/50 shadow-md">
+              <h3 className="text-amber-800 font-medium mb-1 text-sm">Time Control</h3>
+              <ChessTimer compactView={true} lightTheme={true} />
             </div>
 
             {/* Game Controls */}
-            <div className="backdrop-blur-sm bg-stone-800/90 rounded-2xl shadow-2xl p-4 border border-amber-900/50 mt-2">
+            <div className="backdrop-blur-sm bg-white/90 rounded-2xl shadow-lg p-4 border border-amber-500/50 mt-2">
               <GameControls
                 onNewGame={() => {
                   setGame(new Chess());
@@ -614,7 +634,7 @@ export function ChessGame() {
               {/* Forfeit Button */}
               {gameStore.gameStarted && !gameStore.gameResult && (
                 <button
-                  className="w-full mt-3 bg-gradient-to-r from-red-800 to-red-950 hover:from-red-700 hover:to-red-900 text-red-100 font-bold py-2 px-4 rounded-xl transition-all duration-200 border border-red-700/50"
+                  className="w-full mt-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-bold py-2 px-4 rounded-xl transition-all duration-200 border border-red-300"
                   onClick={() => {
                     // Forfeit: declare opponent as winner
                     const winner = isPlayerTurn() ? (gameStore.playerSide === 'white' ? 'black' : 'white') : gameStore.playerSide;
@@ -633,17 +653,14 @@ export function ChessGame() {
           isOpen={!!promotionData}
           onSelect={handlePromotion}
           color={promotionData?.color || 'white'}
+          lightTheme={true}
         />
         
         {/* Game Result Modal */}
         {gameStore.gameResult && (
-          <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 animate-fadeIn backdrop-blur-sm">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate-fadeIn backdrop-blur-sm">
             <div 
-              className="bg-stone-800/90 border border-amber-900/50 rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4 text-center transform animate-slideUp"
-              style={{
-                backgroundImage: `linear-gradient(to bottom, rgba(68, 64, 60, 0.7), rgba(41, 37, 36, 0.9))`,
-                backgroundSize: 'cover'
-              }}
+              className="bg-white border border-amber-500/50 rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4 text-center transform animate-slideUp"
             >
               <div className="mb-6">
                 {gameStore.gameResult.winner === 'white' && (
@@ -656,20 +673,20 @@ export function ChessGame() {
                   <div className="text-6xl mb-4 animate-pulse">🤝</div>
                 )}
                 
-                <h2 className="text-3xl font-bold text-amber-100 mb-2 font-serif">
+                <h2 className="text-3xl font-bold text-amber-800 mb-2 font-serif">
                   {gameStore.gameResult.winner === 'white' && 'White Wins!'}
                   {gameStore.gameResult.winner === 'black' && 'Black Wins!'}
                   {gameStore.gameResult.winner === null && 'Draw!'}
                 </h2>
                 
-                <p className="text-amber-200/80 capitalize">
+                <p className="text-amber-700 capitalize">
                   {gameStore.gameResult.reason}
                 </p>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <button
                   onClick={startNewGameSameSettings}
-                  className="w-full bg-gradient-to-r from-amber-800 to-amber-950 hover:from-amber-700 hover:to-amber-900 text-amber-100 font-bold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-105 shadow-lg border border-amber-600/50"
+                  className="w-full bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-bold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-105 shadow-lg"
                 >
                   Play Again
                 </button>
@@ -680,7 +697,7 @@ export function ChessGame() {
                     setSelectedSquare(null);
                     setLegalMoves([]);
                   }}
-                  className="w-full bg-stone-700 border-2 border-amber-900/50 hover:border-amber-700/70 text-amber-200 font-semibold py-3 px-6 rounded-xl transition-all duration-200"
+                  className="w-full bg-white border-2 border-amber-500/50 hover:border-amber-400 text-amber-800 font-semibold py-3 px-6 rounded-xl transition-all duration-200"
                 >
                   Main Menu
                 </button>

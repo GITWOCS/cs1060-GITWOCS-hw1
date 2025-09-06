@@ -1,22 +1,14 @@
 import React from 'react';
-import { Download, Copy, FileText, RotateCcw } from 'lucide-react';
+import { FileText } from 'lucide-react';
 
 interface MoveListProps {
   historySan?: string[]; // Optional SAN array for deterministic updates
-  onCopyPgn: () => void;
-  onDownloadPgn: () => void;
-  onCopyFen: () => void;
-  onUndo?: () => void;
-  allowUndo?: boolean;
+  compactView?: boolean;
 }
 
 export function MoveList({ 
   historySan,
-  onCopyPgn, 
-  onDownloadPgn, 
-  onCopyFen, 
-  onUndo,
-  allowUndo = false 
+  compactView = false
 }: MoveListProps) {
   const moves = React.useMemo(() => {
     const pairedMoves: Array<{ white?: string; black?: string; number: number }> = [];
@@ -33,19 +25,19 @@ export function MoveList({
   }, [historySan]);
 
   return (
-    <div className="bg-white rounded-xl shadow-lg p-6 h-full">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-bold text-gray-800 flex items-center">
-          <FileText className="w-5 h-5 mr-2" />
+    <div className="bg-white rounded-xl shadow-lg p-4 flex flex-col" style={{ maxHeight: compactView ? '250px' : '350px' }}>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className={`${compactView ? 'text-sm' : 'text-lg'} font-bold text-gray-800 flex items-center`}>
+          <FileText className={`${compactView ? 'w-4 h-4' : 'w-5 h-5'} mr-2`} />
           Move History
         </h3>
-        <div className="text-sm text-gray-600">
+        <div className="text-xs text-gray-600">
           {moves.length} moves
         </div>
       </div>
 
       {/* Move list */}
-      <div className="max-h-96 overflow-y-auto mb-6 border rounded-lg bg-gray-50">
+      <div className="overflow-y-auto mb-2 border rounded-lg bg-gray-50 flex-grow">
         {moves.length === 0 ? (
           <div className="p-8 text-center text-gray-500">
             <FileText className="w-12 h-12 mx-auto mb-2 text-gray-300" />
@@ -62,45 +54,6 @@ export function MoveList({
               </div>
             ))}
           </div>
-        )}
-      </div>
-
-      {/* Action buttons */}
-      <div className="space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            onClick={onCopyPgn}
-            className="flex items-center justify-center px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors duration-200 text-sm"
-          >
-            <Copy className="w-4 h-4 mr-2" />
-            Copy PGN
-          </button>
-          <button
-            onClick={onDownloadPgn}
-            className="flex items-center justify-center px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors duration-200 text-sm"
-          >
-            <Download className="w-4 h-4 mr-2" />
-            Download
-          </button>
-        </div>
-        
-        <button
-          onClick={onCopyFen}
-          className="w-full flex items-center justify-center px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg transition-colors duration-200 text-sm"
-        >
-          <FileText className="w-4 h-4 mr-2" />
-          Copy FEN
-        </button>
-
-
-        {allowUndo && onUndo && (
-          <button
-            onClick={onUndo}
-            className="w-full flex items-center justify-center px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors duration-200 text-sm"
-          >
-            <RotateCcw className="w-4 h-4 mr-2" />
-            Undo Move
-          </button>
         )}
       </div>
     </div>

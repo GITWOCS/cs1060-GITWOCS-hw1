@@ -2,7 +2,12 @@ import { useEffect, useRef } from 'react';
 import { Clock } from 'lucide-react';
 import { useGameStore } from '../store/gameStore';
 
-export function ChessTimer() {
+export interface ChessTimerProps {
+  compactView?: boolean;
+  lightTheme?: boolean;
+}
+
+export function ChessTimer({ compactView = false, lightTheme = false }: ChessTimerProps) {
   const {
     whiteTime,
     blackTime,
@@ -68,35 +73,43 @@ export function ChessTimer() {
     const isActive = activeColor === color;
     const isLow = time < 60;
     
-    let baseClass = "flex items-center justify-between p-4 rounded-xl transition-all duration-300 ";
+    let baseClass = `flex items-center justify-between ${compactView ? 'p-2' : 'p-4'} rounded-xl transition-all duration-300 `;
     
     if (isActive) {
-      baseClass += isLow 
-        ? "bg-red-100 border-2 border-red-500 shadow-lg scale-105 " 
-        : "bg-amber-100 border-2 border-amber-500 shadow-lg scale-105 ";
+      if (isLow) {
+        baseClass += lightTheme
+          ? "bg-red-50 border-2 border-red-400 shadow-md scale-105 "
+          : "bg-red-900/30 border-2 border-red-500 shadow-lg scale-105 ";
+      } else {
+        baseClass += lightTheme
+          ? "bg-amber-50 border-2 border-amber-400 shadow-md scale-105 "
+          : "bg-amber-900/30 border-2 border-amber-500 shadow-lg scale-105 ";
+      }
     } else {
-      baseClass += "bg-gray-100 border-2 border-gray-300 ";
+      baseClass += lightTheme
+        ? "bg-gray-50 border-2 border-gray-200 "
+        : "bg-gray-900/20 border-2 border-gray-700/50 ";
     }
     
     return baseClass;
   };
 
   return (
-    <div className="grid grid-cols-2 gap-6 mb-6">
+    <div className={`grid grid-cols-2 gap-${compactView ? '3' : '6'} ${compactView ? 'mb-2' : 'mb-6'}`}>
       {/* Black Timer (top) */}
       <div className={getTimerClass('black', blackTime)}>
         <div>
-          <div className="text-lg font-bold text-gray-800">Black</div>
-          <div className="text-xs text-gray-600">Player 2</div>
+          <div className={`${compactView ? 'text-sm' : 'text-lg'} font-bold ${lightTheme ? 'text-gray-800' : 'text-gray-100'}`}>Black</div>
+          {!compactView && <div className={`text-xs ${lightTheme ? 'text-gray-600' : 'text-gray-400'}`}>Player 2</div>}
         </div>
         <div className="text-right">
-          <div className={`text-2xl font-mono font-bold ${blackTime < 60 ? 'text-red-600' : 'text-gray-800'}`}>
+          <div className={`${compactView ? 'text-lg' : 'text-2xl'} font-mono font-bold ${blackTime < 60 ? (lightTheme ? 'text-red-600' : 'text-red-400') : (lightTheme ? 'text-gray-800' : 'text-gray-100')}`}>
             {formatTime(blackTime)}
           </div>
           {activeColor === 'black' && isGameActive && (
             <div className="flex items-center justify-end mt-1">
-              <Clock className="w-3 h-3 mr-1 text-amber-600" />
-              <span className="text-xs text-amber-600">Active</span>
+              <Clock className="w-3 h-3 mr-1 text-amber-500" />
+              <span className="text-xs text-amber-500">Active</span>
             </div>
           )}
         </div>
@@ -105,17 +118,17 @@ export function ChessTimer() {
       {/* White Timer (bottom) */}
       <div className={getTimerClass('white', whiteTime)}>
         <div>
-          <div className="text-lg font-bold text-gray-800">White</div>
-          <div className="text-xs text-gray-600">Player 1</div>
+          <div className={`${compactView ? 'text-sm' : 'text-lg'} font-bold ${lightTheme ? 'text-gray-800' : 'text-gray-100'}`}>White</div>
+          {!compactView && <div className={`text-xs ${lightTheme ? 'text-gray-600' : 'text-gray-400'}`}>Player 1</div>}
         </div>
         <div className="text-right">
-          <div className={`text-2xl font-mono font-bold ${whiteTime < 60 ? 'text-red-600' : 'text-gray-800'}`}>
+          <div className={`${compactView ? 'text-lg' : 'text-2xl'} font-mono font-bold ${whiteTime < 60 ? (lightTheme ? 'text-red-600' : 'text-red-400') : (lightTheme ? 'text-gray-800' : 'text-gray-100')}`}>
             {formatTime(whiteTime)}
           </div>
           {activeColor === 'white' && isGameActive && (
             <div className="flex items-center justify-end mt-1">
-              <Clock className="w-3 h-3 mr-1 text-amber-600" />
-              <span className="text-xs text-amber-600">Active</span>
+              <Clock className="w-3 h-3 mr-1 text-amber-500" />
+              <span className="text-xs text-amber-500">Active</span>
             </div>
           )}
         </div>
