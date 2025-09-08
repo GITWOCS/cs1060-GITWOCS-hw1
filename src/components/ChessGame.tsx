@@ -19,6 +19,8 @@ export function ChessGame() {
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
   const [legalMoves, setLegalMoves] = useState<Square[]>([]);
   const [isAiThinking, setIsAiThinking] = useState(false);
+  // Flag to track if AI is making a move to prevent recursive AI moves
+  const [isAiMakingMove, setIsAiMakingMove] = useState(false);
   const [promotionData, setPromotionData] = useState<{
     from: Square;
     to: Square;
@@ -72,10 +74,18 @@ export function ChessGame() {
       return;
     }
 
-    const isAiTurn = (gameStore.playerSide === 'white' && game.turn() === 'b') ||
-                     (gameStore.playerSide === 'black' && game.turn() === 'w');
+    // This is the key condition: determine if it's the AI's turn based on the player's side and current turn
+    // AI plays white pieces when player is black, and black pieces when player is white
+    const isAiTurn = gameStore.mode === 'computer' && (
+      (gameStore.playerSide === 'white' && game.turn() === 'b') ||
+      (gameStore.playerSide === 'black' && game.turn() === 'w')
+    );
     
+    // If it's not AI's turn, exit immediately
     if (!isAiTurn) return;
+    
+    // Set flag that AI is making a move
+    setIsAiMakingMove(true);
     
     // Start AI thinking and set active color to AI's side (so timer runs for AI)
     setIsAiThinking(true);
@@ -96,6 +106,7 @@ export function ChessGame() {
         if (moves.length === 0) {
           setIsAiThinking(false);
           gameStore.setThinking(false);
+          setIsAiMakingMove(false);
           return;
         }
 
@@ -153,6 +164,19 @@ export function ChessGame() {
           selectedMove = bestMoves[Math.floor(Math.random() * bestMoves.length)];
         }
 
+        // Before making the move, validate that it's actually the AI's turn
+        const aiColor = gameStore.playerSide === 'white' ? 'b' : 'w'; // AI plays opposite of player
+        const currentTurn = game.turn();
+        
+        // Ensure it's the AI's turn to move
+        if (currentTurn !== aiColor) {
+          console.error(`AI tried to move when it's not its turn. Current turn: ${currentTurn}, AI color: ${aiColor}`);
+          setIsAiThinking(false);
+          gameStore.setThinking(false);
+          setIsAiMakingMove(false);
+          return;
+        }
+        
         // Make the AI move
         const move = game.move(selectedMove);
         if (move) {
@@ -175,14 +199,25 @@ export function ChessGame() {
             }
           }
           
+          // After AI moves, it should ALWAYS be the player's turn
+          // Set active color for timer
           gameStore.setActiveColor(newGame.turn() === 'w' ? 'white' : 'black');
+          
+          // Check for checkmate, stalemate, etc.
           checkGameEnd(newGame);
+          
+          // IMPORTANT: Do not trigger another AI move here - wait for player's move
         }
       } catch (error) {
         console.error('AI move error:', error);
       } finally {
-        setIsAiThinking(false);
-        gameStore.setThinking(false);
+        // Make sure we keep the AI move flag active during animation
+        // to prevent multiple quick moves
+        setTimeout(() => {
+          setIsAiThinking(false);
+          gameStore.setThinking(false);
+          setIsAiMakingMove(false);
+        }, 500); // Add a delay to match animation time
       }
     }, thinkTime);
   }, [game, gameStore, cloneWithHistory, updateHistory, checkGameEnd]);
@@ -208,11 +243,23 @@ export function ChessGame() {
       return false;
     }
     
-    // In computer mode, strictly enforce turn order
+    // In computer mode, enforce proper turn order
     if (gameStore.mode === 'computer') {
-      const isPlayerTurn = (gameStore.playerSide === 'white' && game.turn() === 'w') ||
-                          (gameStore.playerSide === 'black' && game.turn() === 'b');
-      if (!isPlayerTurn || gameStore.isThinking) {
+      // Get the piece being moved
+      const piece = game.get(sourceSquare);
+      if (!piece) return false;
+      
+      // Check if it's player's turn and they're moving their own piece
+      const playerColor = gameStore.playerSide === 'white' ? 'w' : 'b';
+      const isPlayerPiece = piece.color === playerColor;
+      const isCorrectTurn = piece.color === game.turn();
+      
+      // Allow move only if:
+      // 1. It's the player's piece
+      // 2. It's that color's turn to move
+      // 3. AI is not currently thinking
+      if (!isPlayerPiece || !isCorrectTurn || gameStore.isThinking || isAiMakingMove) {
+        console.log('Move rejected: Not player turn/piece or AI is thinking');
         return false;
       }
     }
@@ -256,11 +303,22 @@ export function ChessGame() {
   const handleSquareClick = (square: Square) => {
     if (!gameStore.gameStarted || gameStore.gameResult) return;
 
-    // In computer mode, strictly enforce turn order
+    // In computer mode, check if it's the player's turn
     if (gameStore.mode === 'computer') {
-      const isPlayerTurn = (gameStore.playerSide === 'white' && game.turn() === 'w') ||
-                          (gameStore.playerSide === 'black' && game.turn() === 'b');
-      if (!isPlayerTurn || gameStore.isThinking) return;
+      // Get the current turn ('w' or 'b')
+      const currentTurn = game.turn();
+      
+      // Convert player side to color code
+      const playerColor = gameStore.playerSide === 'white' ? 'w' : 'b';
+      
+      // Check if current turn matches player's color
+      const isPlayerTurn = currentTurn === playerColor;
+      
+      // No moves during AI's thinking time
+      if (!isPlayerTurn || gameStore.isThinking || isAiMakingMove) {
+        console.log(`Square click rejected: Not player turn (${currentTurn}) or AI is thinking`);
+        return;
+      }
     }
 
     if (selectedSquare === square) {
@@ -274,9 +332,28 @@ export function ChessGame() {
       // Attempt to make the move
       attemptMove(selectedSquare, square);
     } else {
-      // Select new piece - only allow selecting current player's pieces
+      // Select new piece - allow selecting pieces based on whose turn it is
       const piece = game.get(square);
+      
+      // We need two checks:
+      // 1. Is there a piece on this square?
+      // 2. Does the piece color match the current turn?
       if (piece && piece.color === game.turn()) {
+        // In computer mode, make an additional check that the player is actually
+        // moving their own color pieces
+        if (gameStore.mode === 'computer') {
+          const playerColor = gameStore.playerSide === 'white' ? 'w' : 'b';
+          
+          // Make sure the player is moving their assigned color
+          if (piece.color !== playerColor) {
+            console.log(`Cannot select opponent piece: piece=${piece.color}, playerColor=${playerColor}`);
+            setSelectedSquare(null);
+            setLegalMoves([]);
+            return;
+          }
+        }
+        
+        // If we get here, the piece can be selected
         setSelectedSquare(square);
         const moves = game.moves({ square, verbose: true });
         setLegalMoves(moves.map(move => move.to));
@@ -291,16 +368,59 @@ export function ChessGame() {
   const attemptMove = (from: Square, to: Square) => {
     // Validate move using chess.js
     try {
+      // Get current game state
       const testGame = new Chess(game.fen());
       const piece = testGame.get(from);
       
-      if (!piece || piece.color !== testGame.turn()) {
+      if (!piece) {
+        console.log('No piece at the source square');
         setSelectedSquare(null);
         setLegalMoves([]);
         return;
       }
       
-      // Check if this is a promotion move
+      // The move should be valid if:
+      // 1. It's the current color's turn to move
+      // 2. In computer mode, the piece color matches the player's assigned side
+      const currentTurn = game.turn();
+      const playerColor = gameStore.playerSide === 'white' ? 'w' : 'b';
+      
+      // For human vs human, only check if it's the correct color's turn
+      if (gameStore.mode === 'human' && piece.color !== currentTurn) {
+        console.log(`Wrong turn: piece=${piece.color}, current turn=${currentTurn}`);
+        setSelectedSquare(null);
+        setLegalMoves([]);
+        return;
+      }
+      
+      // For computer mode, check both the turn and the player's assigned color
+      if (gameStore.mode === 'computer') {
+        // AI is thinking or making a move
+        if (gameStore.isThinking || isAiMakingMove) {
+          console.log('AI is currently thinking - cannot move');
+          setSelectedSquare(null);
+          setLegalMoves([]);
+          return;
+        }
+        
+        // Wrong color for current turn
+        if (piece.color !== currentTurn) {
+          console.log(`Wrong turn: piece=${piece.color}, current turn=${currentTurn}`);
+          setSelectedSquare(null);
+          setLegalMoves([]);
+          return;
+        }
+        
+        // Player moving opponent's pieces
+        if (piece.color !== playerColor) {
+          console.log(`Cannot move opponent pieces: piece=${piece.color}, player=${playerColor}`);
+          setSelectedSquare(null);
+          setLegalMoves([]);
+          return;
+        }
+      }
+      
+      // Check if this is a promotion move (now piece is guaranteed to be defined)
       const isPromotion = piece.type === 'p' && 
         ((piece.color === 'w' && to[1] === '8') || (piece.color === 'b' && to[1] === '1'));
 
@@ -348,18 +468,28 @@ export function ChessGame() {
         // Check for game end conditions
         checkGameEnd(newGame);
         
-        // If against computer and it's now AI's turn, request AI move
+        // Only request AI move if this was a player's move (not an AI move)  
+        // and if it's now AI's turn based on player side selection
         const aiShouldMove = (
           gameStore.mode === 'computer' &&
           (
             (gameStore.playerSide === 'white' && newGame.turn() === 'b') ||
             (gameStore.playerSide === 'black' && newGame.turn() === 'w')
           ) &&
-          !newGame.isGameOver()
+          !newGame.isGameOver() && 
+          !isAiMakingMove
         );
         
         if (aiShouldMove) {
-          setTimeout(() => makeAiMove(), 300);
+          // Set AI making move flag BEFORE the timeout to prevent multiple triggers
+          setIsAiMakingMove(true);
+          
+          // Give enough time for the piece movement animation to complete
+          // and for the player to see the board state
+          const aiDelay = gameStore.playerSide === 'black' ? 800 : 500;
+          
+          // This ensures we don't get into an infinite loop of AI moves
+          setTimeout(() => makeAiMove(), aiDelay);
         }
         return true;
       }
@@ -418,9 +548,20 @@ export function ChessGame() {
     gameStore.setEvaluation(initialEval);
     
     gameStore.startGame();
-    // If AI should move first
-    if (currentMode === 'computer' && currentSide === 'black') {
-      setTimeout(() => makeAiMove(), 400);
+    
+    // If AI should move first (player is black and it's white's turn), trigger AI's first move
+    if (currentMode === 'computer' && currentSide === 'black' && new Chess().turn() === 'w') {
+      console.log('Starting new game with AI as white - triggering first AI move');
+      // Clear any existing AI move state
+      setIsAiThinking(false);
+      gameStore.setThinking(false);
+      
+      // Set flag to indicate AI is making a move
+      setIsAiMakingMove(true);
+      
+      // Give a longer delay before AI makes its first move when player is black
+      // This ensures all UI animations and state updates are complete
+      setTimeout(() => makeAiMove(), 1000);
     }
   }, [gameStore, makeAiMove]);
 
@@ -481,20 +622,38 @@ export function ChessGame() {
 
   // Check if it's player's turn (for computer mode)
   const isPlayerTurn = () => {
+    // In human vs human mode, both sides can move
     if (gameStore.mode === 'human') return true;
-    return (gameStore.playerSide === 'white' && game.turn() === 'w') ||
-           (gameStore.playerSide === 'black' && game.turn() === 'b');
+    
+    // In computer mode, player can only move when:
+    // 1. Current turn matches the player's color code (w/b)
+    // 2. AI is not currently thinking/making a move
+    const currentTurn = game.turn(); // 'w' or 'b'
+    const playerColor = gameStore.playerSide === 'white' ? 'w' : 'b';
+    const playerCanMove = currentTurn === playerColor;
+    
+    // For debugging
+    console.log(`isPlayerTurn check: currentTurn=${currentTurn}, playerColor=${playerColor}, playerSide=${gameStore.playerSide}`);
+                         
+    return playerCanMove && !isAiThinking && !isAiMakingMove;
   };
 
-  // Initialize AI move on game start
+  // Initialize AI move on game start - only trigger once when game starts
   useEffect(() => {
     if (gameStore.gameStarted) {
       // If AI should move first (player chose black), request AI move
-      if (gameStore.mode === 'computer' && gameStore.playerSide === 'black') {
+      // But ONLY if the current turn is white (since AI should play white when player is black)
+      if (gameStore.mode === 'computer' && 
+          gameStore.playerSide === 'black' && 
+          game.turn() === 'w' && 
+          !isAiMakingMove) {
+            
+        // Reset the game state before AI makes its first move
+        setIsAiMakingMove(true); // Prevent multiple AI moves
         setTimeout(() => makeAiMove(), 500);
       }
     }
-  }, [gameStore.gameStarted, gameStore.mode, gameStore.playerSide, makeAiMove]);
+  }, [gameStore.gameStarted, gameStore.mode, gameStore.playerSide, game, makeAiMove, isAiMakingMove]);
   
   // This separate effect only runs when the game position changes
   const gamePositionRef = useRef(game.fen());
@@ -534,8 +693,8 @@ export function ChessGame() {
                 position={game.fen()}
                 onSquareClick={handleSquareClick}
                 onPieceDrop={onDrop}
-                arePiecesDraggable={gameStore.gameStarted && !gameStore.gameResult && isPlayerTurn()}
-                boardOrientation={gameStore.boardFlipped ? 'black' : 'white'}
+                arePiecesDraggable={gameStore.gameStarted && !gameStore.gameResult && isPlayerTurn() && !isAiMakingMove}
+                boardOrientation={gameStore.playerSide === 'black' ? 'black' : 'white'}
                 customSquareStyles={getSquareStyles()}
                 customBoardStyle={{
                   borderRadius: '12px',
@@ -606,6 +765,7 @@ export function ChessGame() {
                 isInCheck={game.inCheck()}
                 gameResult={gameStore.gameResult}
                 isThinking={isAiThinking}
+                isPlayerTurn={isPlayerTurn()}
                 compactView={true}
                 lightTheme={true}
               />

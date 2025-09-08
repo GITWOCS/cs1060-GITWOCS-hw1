@@ -1,4 +1,4 @@
-import { Crown, AlertTriangle, Brain } from 'lucide-react';
+import { Crown, AlertTriangle, Brain, Hand } from 'lucide-react';
 import { GameResult } from '../types/chess';
 
 export interface GameStatusProps {
@@ -7,6 +7,7 @@ export interface GameStatusProps {
   isInCheck: boolean;
   gameResult: GameResult | null;
   isThinking: boolean;
+  isPlayerTurn?: boolean;
   compactView?: boolean;
   lightTheme?: boolean;
 }
@@ -17,6 +18,7 @@ export function GameStatus({
   isInCheck, 
   gameResult, 
   isThinking,
+  isPlayerTurn = false,
   compactView = false,
   lightTheme = false
 }: GameStatusProps) {
@@ -53,11 +55,20 @@ export function GameStatus({
 
   return (
     <div className={`${lightTheme ? 'bg-white' : 'bg-stone-800'} border-2 ${lightTheme ? 'border-amber-500/50' : 'border-amber-900/50'} rounded-xl ${compactView ? 'p-2' : 'p-4'} ${compactView ? 'mb-1' : 'mb-4'}`}>
-      <div className={`flex items-center ${compactView ? 'justify-between' : 'justify-center'} ${compactView ? 'space-x-2' : 'space-x-4'}`}>
+      <div className={`flex items-center flex-wrap ${compactView ? 'justify-between' : 'justify-center'} ${compactView ? 'gap-2' : 'gap-4'}`}>
         {isThinking && (
           <div className="flex items-center text-amber-600">
             <Brain className={`${compactView ? 'w-4 h-4' : 'w-5 h-5'} mr-1 animate-pulse`} />
             <span className={`${compactView ? 'text-xs' : 'text-sm'} font-medium`}>AI thinking...</span>
+          </div>
+        )}
+        
+        {!isThinking && isPlayerTurn && (
+          <div className="flex items-center text-green-600">
+            <Hand className={`${compactView ? 'w-4 h-4' : 'w-5 h-5'} mr-1 animate-bounce`} />
+            <span className={`${compactView ? 'text-xs' : 'text-sm'} font-medium`}>
+              Your turn
+            </span>
           </div>
         )}
         
