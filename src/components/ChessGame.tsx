@@ -74,12 +74,15 @@ export function ChessGame() {
       return;
     }
 
-    // This is the key condition: determine if it's the AI's turn based on the player's side and current turn
-    // AI plays white pieces when player is black, and black pieces when player is white
-    const isAiTurn = gameStore.mode === 'computer' && (
-      (gameStore.playerSide === 'white' && game.turn() === 'b') ||
-      (gameStore.playerSide === 'black' && game.turn() === 'w')
-    );
+    // Only proceed if we're in computer mode
+    if (gameStore.mode !== 'computer') return;
+    
+    // Determine AI's color: opposite of player's color
+    const aiColor = gameStore.playerSide === 'white' ? 'b' : 'w';
+    const currentTurn = game.turn();
+    
+    // Only make AI move if it's actually the AI's turn
+    const isAiTurn = currentTurn === aiColor;
     
     // If it's not AI's turn, exit immediately
     if (!isAiTurn) return;
@@ -165,12 +168,12 @@ export function ChessGame() {
         }
 
         // Before making the move, validate that it's actually the AI's turn
-        const aiColor = gameStore.playerSide === 'white' ? 'b' : 'w'; // AI plays opposite of player
+        const aiColorCheck = gameStore.playerSide === 'white' ? 'b' : 'w';
         const currentTurn = game.turn();
         
         // Ensure it's the AI's turn to move
-        if (currentTurn !== aiColor) {
-          console.error(`AI tried to move when it's not its turn. Current turn: ${currentTurn}, AI color: ${aiColor}`);
+        if (currentTurn !== aiColorCheck) {
+          console.error(`AI tried to move when it's not its turn. Current turn: ${currentTurn}, AI color: ${aiColorCheck}`);
           setIsAiThinking(false);
           gameStore.setThinking(false);
           setIsAiMakingMove(false);
@@ -470,12 +473,11 @@ export function ChessGame() {
         
         // Only request AI move if this was a player's move (not an AI move)  
         // and if it's now AI's turn based on player side selection
+        const nextTurn = newGame.turn();
+        const aiShouldPlayColor = gameStore.playerSide === 'white' ? 'b' : 'w';
         const aiShouldMove = (
           gameStore.mode === 'computer' &&
-          (
-            (gameStore.playerSide === 'white' && newGame.turn() === 'b') ||
-            (gameStore.playerSide === 'black' && newGame.turn() === 'w')
-          ) &&
+          nextTurn === aiShouldPlayColor &&
           !newGame.isGameOver() && 
           !isAiMakingMove
         );
@@ -641,14 +643,13 @@ export function ChessGame() {
   // Initialize AI move on game start - only trigger once when game starts
   useEffect(() => {
     if (gameStore.gameStarted) {
-      // If AI should move first (player chose black), request AI move
-      // But ONLY if the current turn is white (since AI should play white when player is black)
+      // If player chose black, AI plays white and should move first
       if (gameStore.mode === 'computer' && 
           gameStore.playerSide === 'black' && 
           game.turn() === 'w' && 
           !isAiMakingMove) {
             
-        // Reset the game state before AI makes its first move
+        console.log('Player chose black, AI (white) should move first');
         setIsAiMakingMove(true); // Prevent multiple AI moves
         setTimeout(() => makeAiMove(), 500);
       }
