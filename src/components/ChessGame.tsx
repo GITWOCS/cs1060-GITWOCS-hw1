@@ -70,16 +70,21 @@ export function ChessGame() {
 
   // Simple AI that picks moves with some basic strategy
   const makeAiMove = useCallback(() => {
+    const currentGame = gameRef.current;
+    
     if (!gameStore.gameStarted || gameStore.gameResult || game.isGameOver()) {
       return;
     }
 
-    // This is the key condition: determine if it's the AI's turn based on the player's side and current turn
-    // AI plays white pieces when player is black, and black pieces when player is white
-    const isAiTurn = gameStore.mode === 'computer' && (
-      (gameStore.playerSide === 'white' && game.turn() === 'b') ||
-      (gameStore.playerSide === 'black' && game.turn() === 'w')
-    );
+    // Only proceed if we're in computer mode
+    if (gameStore.mode !== 'computer') return;
+    
+    // Determine AI's color: opposite of player's color
+    const aiColor = gameStore.playerSide === 'white' ? 'b' : 'w';
+    const currentTurn = currentGame.turn();
+    
+    // Only make AI move if it's actually the AI's turn
+    const isAiTurn = currentTurn === aiColor;
     
     // If it's not AI's turn, exit immediately
     if (!isAiTurn) return;
@@ -90,7 +95,7 @@ export function ChessGame() {
     // Start AI thinking and set active color to AI's side (so timer runs for AI)
     setIsAiThinking(true);
     gameStore.setThinking(true);
-    gameStore.setActiveColor(game.turn() === 'w' ? 'white' : 'black');
+    gameStore.setActiveColor(currentGame.turn() === 'w' ? 'white' : 'black');
     
     // Store current time to calculate elapsed time at the end
     aiThinkStartTimeRef.current = Date.now();
@@ -101,8 +106,9 @@ export function ChessGame() {
     const thinkTime = baseTime + levelMultiplier + (Math.random() * 1000);
     
     setTimeout(() => {
+      const gameInstanceInTimeout = gameRef.current;
       try {
-        const moves = game.moves({ verbose: true });
+        const moves = gameInstanceInTimeout.moves({ verbose: true });
         if (moves.length === 0) {
           setIsAiThinking(false);
           gameStore.setThinking(false);
@@ -120,7 +126,7 @@ export function ChessGame() {
           // Medium: Prefer captures and checks
           const captures = moves.filter(move => move.captured);
           const checks = moves.filter(move => {
-            const testGame = new Chess(game.fen());
+            const testGame = new Chess(gameInstanceInTimeout.fen());
             testGame.move(move);
             return testGame.inCheck();
           });
@@ -138,7 +144,7 @@ export function ChessGame() {
           let bestScore = gameStore.playerSide === 'white' ? Infinity : -Infinity;
           
           for (const move of moves) {
-            const testGame = new Chess(game.fen());
+            const testGame = new Chess(gameInstanceInTimeout.fen());
             testGame.move(move);
             const score = evaluatePosition(testGame);
             
@@ -165,12 +171,12 @@ export function ChessGame() {
         }
 
         // Before making the move, validate that it's actually the AI's turn
-        const aiColor = gameStore.playerSide === 'white' ? 'b' : 'w'; // AI plays opposite of player
-        const currentTurn = game.turn();
+        const aiColorCheck = gameStore.playerSide === 'white' ? 'b' : 'w';
+        const currentTurnInTimeout = gameInstanceInTimeout.turn();
         
         // Ensure it's the AI's turn to move
-        if (currentTurn !== aiColor) {
-          console.error(`AI tried to move when it's not its turn. Current turn: ${currentTurn}, AI color: ${aiColor}`);
+        if (currentTurnInTimeout !== aiColorCheck) {
+          console.error(`AI tried to move when it's not its turn. Current turn: ${currentTurnInTimeout}, AI color: ${aiColorCheck}`);
           setIsAiThinking(false);
           gameStore.setThinking(false);
           setIsAiMakingMove(false);
@@ -178,9 +184,9 @@ export function ChessGame() {
         }
         
         // Make the AI move
-        const move = game.move(selectedMove);
+        const move = gameInstanceInTimeout.move(selectedMove);
         if (move) {
-          const newGame = cloneWithHistory(game);
+          const newGame = cloneWithHistory(gameInstanceInTimeout);
           setGame(newGame);
           updateHistory(newGame);
           
@@ -220,7 +226,7 @@ export function ChessGame() {
         }, 500); // Add a delay to match animation time
       }
     }, thinkTime);
-  }, [game, gameStore, cloneWithHistory, updateHistory, checkGameEnd]);
+  }, [gameStore, cloneWithHistory, updateHistory, checkGameEnd]);
 
   // Update game reference when game state changes
   useEffect(() => {
@@ -470,12 +476,11 @@ export function ChessGame() {
         
         // Only request AI move if this was a player's move (not an AI move)  
         // and if it's now AI's turn based on player side selection
+        const nextTurn = newGame.turn();
+        const aiShouldPlayColor = gameStore.playerSide === 'white' ? 'b' : 'w';
         const aiShouldMove = (
           gameStore.mode === 'computer' &&
-          (
-            (gameStore.playerSide === 'white' && newGame.turn() === 'b') ||
-            (gameStore.playerSide === 'black' && newGame.turn() === 'w')
-          ) &&
+          nextTurn === aiShouldPlayColor &&
           !newGame.isGameOver() && 
           !isAiMakingMove
         );
@@ -641,19 +646,18 @@ export function ChessGame() {
   // Initialize AI move on game start - only trigger once when game starts
   useEffect(() => {
     if (gameStore.gameStarted) {
-      // If AI should move first (player chose black), request AI move
-      // But ONLY if the current turn is white (since AI should play white when player is black)
+      // If player chose black, AI plays white and should move first
       if (gameStore.mode === 'computer' && 
           gameStore.playerSide === 'black' && 
-          game.turn() === 'w' && 
+          gameRef.current.turn() === 'w' && 
           !isAiMakingMove) {
             
-        // Reset the game state before AI makes its first move
+        console.log('Player chose black, AI (white) should move first');
         setIsAiMakingMove(true); // Prevent multiple AI moves
         setTimeout(() => makeAiMove(), 500);
       }
     }
-  }, [gameStore.gameStarted, gameStore.mode, gameStore.playerSide, game, makeAiMove, isAiMakingMove]);
+  }, [gameStore.gameStarted, gameStore.mode, gameStore.playerSide, makeAiMove, isAiMakingMove]);
   
   // This separate effect only runs when the game position changes
   const gamePositionRef = useRef(game.fen());
