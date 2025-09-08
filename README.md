@@ -1,4 +1,4 @@
-cs1060-GITWOCS-hw1
+Le Chess Master
 
 Contributors:
 ___________________________________________________________________________________________
@@ -7,3 +7,5 @@ ________________________________________________________________________________
 | Mohamed Salam Moumie N.   | GITWOCS    | mohamedsalam_moumientieche@college.harvard.edu |
 | Jean Yves Gatwaza K.      | jGatwaza   | jgatwazakubwimana@college.harvard.edu
 -------------------------------------------------------------------------------------------
+
+Try it out on: https://lechessmaster.netlify.app/
