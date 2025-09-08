@@ -14,11 +14,11 @@ export const TIME_CONTROLS: TimeControl[] = [
 ];
 
 export const AI_STRENGTHS = [
-  { level: 1, name: 'Beginner', skillLevel: 1 },
-  { level: 2, name: 'Easy', skillLevel: 3 },
-  { level: 3, name: 'Novice', skillLevel: 5 },
-  { level: 4, name: 'Intermediate', skillLevel: 8 },
-  { level: 5, name: 'Advanced', skillLevel: 12 },
-  { level: 6, name: 'Expert', skillLevel: 16 },
-  { level: 7, name: 'Master', skillLevel: 20 },
+  { level: 1, name: 'Beginner', skillLevel: 1, elo: 400 },
+  { level: 2, name: 'Easy', skillLevel: 3, elo: 800 },
+  { level: 3, name: 'Novice', skillLevel: 5, elo: 1300 },
+  { level: 4, name: 'Intermediate', skillLevel: 8, elo: 1500 },
+  { level: 5, name: 'Advanced', skillLevel: 12, elo: 1800 },
+  { level: 6, name: 'Expert', skillLevel: 16, elo: 2100 },
+  { level: 7, name: 'Master', skillLevel: 20, elo: 2400 },
 ];

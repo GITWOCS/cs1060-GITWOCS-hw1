@@ -124,6 +124,7 @@ export function GameSetup() {
                     >
                       <div className="font-semibold text-sm text-amber-800">{strength.name}</div>
                       <div className="text-xs text-amber-600">Level {strength.level}</div>
+                      <div className="text-xs text-amber-700 mt-1 font-medium">{strength.elo} ELO</div>
                     </button>
                   ))}
                 </div>
